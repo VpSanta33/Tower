@@ -1,0 +1,19 @@
+web/node_modules/
+web/dist/
+*.exe
+.idea/
+.vscode/
+output/
+.DS_Store
+screenshot/
+.kiro/
+.env
+docs/
+.claude/
+.trellis/
+.worktrees/
+/data
+.codebuddy/
+AGENTS.md
+# Build artifacts
+bin/

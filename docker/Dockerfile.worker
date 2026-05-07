@@ -1,0 +1,71 @@
+FROM golang:1.25.7-alpine AS builder
+
+ARG VERSION
+
+WORKDIR /app
+
+# 安装编译依赖
+RUN apk add --no-cache git curl libpcap-dev gcc musl-dev
+
+# 复制依赖文件并下载
+COPY go.mod go.sum ./
+RUN go mod download
+
+# 复制源代码
+COPY . .
+
+# 下载 ip2region 数据库（编译时准备）
+RUN mkdir -p /app/data && \
+    curl -sL "https://github.com/lionsoul2014/ip2region/raw/master/data/ip2region_v4.xdb" -o /app/data/ip2region_v4.xdb && \
+    curl -sL "https://github.com/lionsoul2014/ip2region/raw/master/data/ip2region_v6.xdb" -o /app/data/ip2region_v6.xdb && \
+    echo "ip2region databases downloaded"
+
+# 编译 worker
+RUN CGO_ENABLED=0 go build -ldflags="-s -w -X main.Version=${VERSION}" \
+    -o /tower-worker ./cmd/worker/main.go
+
+# 安装 ksubdomain（需要 CGO 支持 libpcap）
+RUN CGO_ENABLED=1 go install -v github.com/boy-hack/ksubdomain/v2/cmd/ksubdomain@latest
+
+# ============ 运行阶段 ============
+FROM alpine:3.19
+
+# 安装运行时依赖 (包含 util-linux 用于 prlimit)
+RUN apk add --no-cache \
+    ca-certificates \
+    tzdata \
+    unzip \
+    nmap \
+    masscan \
+    curl \
+    bind-tools \
+    chromium \
+    font-noto-cjk \
+    util-linux \
+    libpcap
+
+# 设置时区
+ENV TZ=Asia/Shanghai
+
+# 设置 Nmap 脚本引擎路径（Alpine nmap 包需要显式指定）
+ENV NMAPDIR=/usr/share/nmap
+
+# 复制 ip2region 数据库
+COPY --from=builder /app/data ./data/
+
+# 复制二进制文件
+COPY --from=builder /tower-worker /tower-worker
+COPY --from=builder /go/bin/ksubdomain /usr/local/bin/ksubdomain
+
+# 创建监控启动脚本
+RUN echo '#!/bin/sh' > /start.sh && \
+    echo '' >> /start.sh && \
+    echo '# 设置资源限制并启动进程' >> /start.sh && \
+    echo 'exec prlimit --nofile=65535:65535 /tower-worker "$@"' >> /start.sh && \
+    chmod +x /start.sh
+
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD pgrep tower-worker || exit 1
+
+ENTRYPOINT ["/start.sh"]

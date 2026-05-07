@@ -1,0 +1,143 @@
+name: Build and Push Docker Images
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE'
+      - '.gitignore'
+
+env:
+  REGISTRY: registry.cn-hangzhou.aliyuncs.com/txf7
+
+jobs:
+  # 先读取版本号，供后续 jobs 使用
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Read version
+        id: version
+        run: |
+          if [ -f VERSION ]; then
+            VERSION=$(cat VERSION | tr -d '\n\r ')
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+          else
+            echo "version=latest" >> $GITHUB_OUTPUT
+          fi
+
+  # [1/4] API Service
+  build-api:
+    runs-on: ubuntu-latest
+    needs: prepare
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - name: Login to Registry
+        uses: docker/login-action@v3
+        with:
+          registry: registry.cn-hangzhou.aliyuncs.com
+          username: ${{ secrets.ALIYUN_REGISTRY_USERNAME }}
+          password: ${{ secrets.ALIYUN_REGISTRY_PASSWORD }}
+      - name: Build and push tower-api
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/Dockerfile.api
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/tower-api:${{ needs.prepare.outputs.version }}
+            ${{ env.REGISTRY }}/tower-api:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # [2/4] RPC Service
+  build-rpc:
+    runs-on: ubuntu-latest
+    needs: prepare
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - name: Login to Registry
+        uses: docker/login-action@v3
+        with:
+          registry: registry.cn-hangzhou.aliyuncs.com
+          username: ${{ secrets.ALIYUN_REGISTRY_USERNAME }}
+          password: ${{ secrets.ALIYUN_REGISTRY_PASSWORD }}
+      - name: Build and push tower-rpc
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/Dockerfile.rpc
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/tower-rpc:${{ needs.prepare.outputs.version }}
+            ${{ env.REGISTRY }}/tower-rpc:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # [3/4] Web Service
+  build-web:
+    runs-on: ubuntu-latest
+    needs: prepare
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - name: Login to Registry
+        uses: docker/login-action@v3
+        with:
+          registry: registry.cn-hangzhou.aliyuncs.com
+          username: ${{ secrets.ALIYUN_REGISTRY_USERNAME }}
+          password: ${{ secrets.ALIYUN_REGISTRY_PASSWORD }}
+      - name: Build and push tower-web
+        uses: docker/build-push-action@v5
+        with:
+          context: web/
+          file: web/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/tower-web:${{ needs.prepare.outputs.version }}
+            ${{ env.REGISTRY }}/tower-web:latest
+          no-cache: true
+          build-args: |
+            BUILD_TIME=${{ github.run_id }}
+
+  # [4/4] Worker Service
+  build-worker:
+    runs-on: ubuntu-latest
+    needs: prepare
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - name: Login to Registry
+        uses: docker/login-action@v3
+        with:
+          registry: registry.cn-hangzhou.aliyuncs.com
+          username: ${{ secrets.ALIYUN_REGISTRY_USERNAME }}
+          password: ${{ secrets.ALIYUN_REGISTRY_PASSWORD }}
+      - name: Build and push tower-worker
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/Dockerfile.worker
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/tower-worker:${{ needs.prepare.outputs.version }}
+            ${{ env.REGISTRY }}/tower-worker:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

@@ -1,0 +1,39 @@
+package worker
+
+import (
+	"net/http"
+
+	"tower/api/internal/svc"
+)
+
+// DockerComposeWorkerHandler 提供 docker-compose-worker.yaml 静态文件
+func DockerComposeWorkerHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		content := `# Tower Worker 探针部署
+#
+# 使用方法:
+#   TOWER_SERVER=http://your-server:8888 TOWER_KEY=your-key docker-compose -f docker-compose-worker.yaml up -d
+#
+# 环境变量:
+#   TOWER_SERVER: API服务器地址 (必填)
+#   TOWER_KEY: 安装密钥 (必填，从管理后台获取)
+#   TOWER_NAME: Worker名称 (可选，默认自动生成)
+#   TOWER_CONCURRENCY: 并发数 (可选，默认5)
+
+services:
+  tower-worker:
+    image: registry.cn-hangzhou.aliyuncs.com/txf7/tower-worker:latest
+    container_name: tower-worker
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      - TOWER_SERVER=${TOWER_SERVER}
+      - TOWER_KEY=${TOWER_KEY}
+      - TOWER_NAME=${TOWER_NAME:-}
+      - TOWER_CONCURRENCY=${TOWER_CONCURRENCY:-5}
+`
+		w.Header().Set("Content-Type", "text/yaml; charset=utf-8")
+		w.Header().Set("Content-Disposition", "attachment; filename=docker-compose-worker.yaml")
+		w.Write([]byte(content))
+	}
+}

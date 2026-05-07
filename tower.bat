@@ -1,0 +1,416 @@
+@echo off
+setlocal enabledelayedexpansion
+
+REM Tower Management Script (Windows)
+REM Functions: Install, Upgrade, Uninstall, Version Check
+REM Press Ctrl+C to exit at any time
+
+set SCRIPT_VERSION=1.0
+set COMPOSE_FILE=docker-compose.yaml
+set GITHUB_RAW=https://raw.githubusercontent.com/tangxiaofeng7/tower/main
+set LOCAL_VERSION=unknown
+set REMOTE_VERSION=unknown
+
+:check_docker
+docker version >nul 2>&1
+if %errorlevel% neq 0 goto :docker_error
+goto :get_versions
+
+:docker_error
+echo [Tower] Error: Docker is not installed or not running.
+echo [Tower] Please install Docker Desktop first.
+pause
+exit /b 1
+
+:get_versions
+REM Check if containers are running
+docker inspect tower_api >nul 2>&1
+if %errorlevel% neq 0 set "LOCAL_VERSION=Not Installed"
+
+if "%LOCAL_VERSION%"=="Not Installed" goto :cleanup_local
+
+if exist "VERSION" (
+    for /f "tokens=*" %%i in (VERSION) do set "LOCAL_VERSION=%%i"
+) else (
+    set "LOCAL_VERSION=unknown"
+)
+
+:cleanup_local
+REM Cleanup local version (trim leading and trailing spaces)
+for /f "tokens=* delims= " %%a in ("!LOCAL_VERSION!") do set "LOCAL_VERSION=%%a"
+:trim_local
+if "!LOCAL_VERSION:~-1!"==" " set "LOCAL_VERSION=!LOCAL_VERSION:~0,-1!" & goto :trim_local
+
+goto :main_menu
+
+:main_menu
+cls
+echo.
+echo   ========================================
+echo        Tower Manager v%SCRIPT_VERSION%
+echo   ========================================
+echo.
+echo   Local Version:  %LOCAL_VERSION%
+echo.
+echo   ========================================
+echo.
+echo   1. Install Tower
+echo   2. Upgrade Tower
+echo   3. Uninstall Tower
+echo   4. Check Status
+echo   5. View Logs
+echo   6. Start Services
+echo   7. Stop Services
+echo   8. Restart Services
+echo   9. Check Updates
+echo   0. Exit
+echo.
+echo   ========================================
+echo.
+set "opt="
+set /p "opt=Select option: "
+
+if not defined opt goto :opt_error
+
+if "%opt%"=="1" goto :install
+if "%opt%"=="2" goto :upgrade
+if "%opt%"=="3" goto :uninstall
+if "%opt%"=="4" goto :status
+if "%opt%"=="5" goto :logs
+if "%opt%"=="6" goto :start
+if "%opt%"=="7" goto :stop
+if "%opt%"=="8" goto :restart
+if "%opt%"=="9" goto :check_update
+if "%opt%"=="0" exit /b 0
+
+:opt_error
+echo [Tower] Invalid option
+goto :pause_return
+
+:check_update
+echo.
+echo [Tower] Checking for updates...
+
+if "%LOCAL_VERSION%"=="Not Installed" goto :not_installed_msg
+
+REM Fetch remote version from GitHub
+call :fetch_remote_version
+
+echo ----------------------------------------
+echo Local Version:  %LOCAL_VERSION%
+echo Latest Version: %REMOTE_VERSION%
+echo ----------------------------------------
+if "%REMOTE_VERSION%"=="unknown" goto :unknown_msg
+
+set "LOCAL_VER_CLEAN=%LOCAL_VERSION%"
+set "REMOTE_VER_CLEAN=%REMOTE_VERSION%"
+
+for /f "tokens=*" %%a in ("!LOCAL_VER_CLEAN!") do set "LOCAL_VER_CLEAN=%%a"
+for /f "tokens=*" %%a in ("!REMOTE_VER_CLEAN!") do set "REMOTE_VER_CLEAN=%%a"
+
+if "!LOCAL_VER_CLEAN:~0,1!"=="V" set "LOCAL_VER_CLEAN=!LOCAL_VER_CLEAN:~1!"
+if "!LOCAL_VER_CLEAN:~0,1!"=="v" set "LOCAL_VER_CLEAN=!LOCAL_VER_CLEAN:~1!"
+if "!REMOTE_VER_CLEAN:~0,1!"=="V" set "REMOTE_VER_CLEAN=!REMOTE_VER_CLEAN:~1!"
+if "!REMOTE_VER_CLEAN:~0,1!"=="v" set "REMOTE_VER_CLEAN=!REMOTE_VER_CLEAN:~1!"
+
+for /f "tokens=*" %%a in ("!LOCAL_VER_CLEAN!") do set "LOCAL_VER_CLEAN=%%a"
+for /f "tokens=*" %%a in ("!REMOTE_VER_CLEAN!") do set "REMOTE_VER_CLEAN=%%a"
+
+if "!LOCAL_VER_CLEAN!"=="!REMOTE_VER_CLEAN!" goto :already_latest
+goto :new_version_found
+
+:not_installed_msg
+echo [Tower] Tower is not installed.
+goto :pause_return
+
+:unknown_msg
+echo [Tower] Cannot get remote version.
+echo [Tower] Please check your internet connection.
+goto :pause_return
+
+:already_latest
+echo [Tower] You are already on the latest version.
+goto :pause_return
+
+:new_version_found
+echo [Tower] New version found: %REMOTE_VERSION%
+set /p "do_upgrade=Upgrade now? (Y/N): "
+if /i "!do_upgrade!"=="Y" goto :upgrade
+goto :pause_return
+
+:generate_jwt_secret
+REM Generate a random JWT secret using PowerShell
+set "JWT_SECRET="
+for /f "usebackq delims=" %%s in (`powershell -NoProfile -Command "[System.BitConverter]::ToString((1..32 | ForEach-Object { Get-Random -Minimum 0 -Maximum 256 }) -as [byte[]]).Replace('-','').ToLower()" 2^>nul`) do set "JWT_SECRET=%%s"
+if not defined JWT_SECRET (
+    REM Fallback: use timestamp + random number
+    for /f "usebackq delims=" %%s in (`powershell -NoProfile -Command "((Get-Date).ToString('yyyyMMddHHmmssfff') + '-' + (Get-Random -Maximum 999999999).ToString())" 2^>nul`) do set "JWT_SECRET=%%s"
+)
+goto :eof
+
+:init_env_file
+REM Initialize .env file with JWT secret
+if exist ".env" (
+    REM Check if Tower_JWT_SECRET already exists in .env
+    findstr /B "Tower_JWT_SECRET=" .env >nul 2>&1
+    if !errorlevel! equ 0 (
+        echo [Tower] Tower_JWT_SECRET already exists in .env, skipping.
+        goto :eof
+    )
+    REM Append to existing .env
+    call :generate_jwt_secret
+    echo. >> .env
+    echo # Tower JWT Secret (auto-generated, keep secret)>> .env
+    echo Tower_JWT_SECRET=!JWT_SECRET!>> .env
+    echo [Tower] Appended Tower_JWT_SECRET to .env
+) else (
+    REM Create new .env
+    call :generate_jwt_secret
+    echo # Tower Environment Config (auto-generated, do not commit)>> .env
+    echo # JWT Secret: Used for JWT token signing, changing it requires re-login>> .env
+    echo Tower_JWT_SECRET=!JWT_SECRET!>> .env
+    echo [Tower] Created .env with Tower_JWT_SECRET
+)
+goto :eof
+
+:install
+echo.
+echo [Tower] Installing Tower...
+if not exist %COMPOSE_FILE% goto :no_compose_file
+
+REM Initialize .env file (generate JWT Secret)
+call :init_env_file
+
+if not "%REMOTE_VERSION%"=="unknown" echo [Tower] Installing version: %REMOTE_VERSION%
+
+echo [Tower] Pulling images...
+docker compose pull
+if %errorlevel% neq 0 goto :pull_fail
+
+echo [Tower] Starting services...
+docker compose up -d
+if %errorlevel% neq 0 goto :start_fail
+
+if not "%REMOTE_VERSION%"=="unknown" (
+    >VERSION echo %REMOTE_VERSION%
+    echo [Tower] Created local version file: %REMOTE_VERSION%
+)
+
+echo.
+echo ========================================
+echo [Tower] Installation Successful!
+echo ========================================
+echo.
+echo URL: https://localhost:3333
+echo Account: admin / 123456
+echo.
+echo Note: Deploy workers before scanning.
+echo ========================================
+goto :pause_return
+
+:no_compose_file
+echo [Tower] Error: %COMPOSE_FILE% not found.
+goto :pause_return
+
+:pull_fail
+echo [Tower] Failed to pull images.
+goto :pause_return
+
+:start_fail
+echo [Tower] Failed to start services.
+goto :pause_return
+
+:upgrade
+echo.
+echo [Tower] Upgrading Tower...
+
+if "%LOCAL_VERSION%"=="Not Installed" goto :install_first
+
+REM Fetch remote version from GitHub
+call :fetch_remote_version
+
+echo ----------------------------------------
+echo Current Version: %LOCAL_VERSION%
+echo Target Version: %REMOTE_VERSION%
+echo ----------------------------------------
+
+set "LOCAL_VER_CLEAN=%LOCAL_VERSION%"
+set "REMOTE_VER_CLEAN=%REMOTE_VERSION%"
+
+for /f "tokens=*" %%a in ("!LOCAL_VER_CLEAN!") do set "LOCAL_VER_CLEAN=%%a"
+for /f "tokens=*" %%a in ("!REMOTE_VER_CLEAN!") do set "REMOTE_VER_CLEAN=%%a"
+
+if "!LOCAL_VER_CLEAN:~0,1!"=="V" set "LOCAL_VER_CLEAN=!LOCAL_VER_CLEAN:~1!"
+if "!LOCAL_VER_CLEAN:~0,1!"=="v" set "LOCAL_VER_CLEAN=!LOCAL_VER_CLEAN:~1!"
+if "!REMOTE_VER_CLEAN:~0,1!"=="V" set "REMOTE_VER_CLEAN=!REMOTE_VER_CLEAN:~1!"
+if "!REMOTE_VER_CLEAN:~0,1!"=="v" set "REMOTE_VER_CLEAN=!REMOTE_VER_CLEAN:~1!"
+
+for /f "tokens=*" %%a in ("!LOCAL_VER_CLEAN!") do set "LOCAL_VER_CLEAN=%%a"
+for /f "tokens=*" %%a in ("!REMOTE_VER_CLEAN!") do set "REMOTE_VER_CLEAN=%%a"
+
+if not "!LOCAL_VER_CLEAN!"=="!REMOTE_VER_CLEAN!" goto :version_different
+
+echo [Tower] Already on latest version.
+goto :pause_return
+
+:install_first
+echo [Tower] Tower not installed. Please install first.
+goto :pause_return
+
+:cancel_upgrade
+echo [Tower] Upgrade cancelled.
+goto :pause_return
+
+:version_different
+set /p "confirm=Confirm upgrade? Services will restart. (Y/N): "
+if /i not "!confirm!"=="Y" goto :cancel_upgrade
+
+:do_upgrade
+echo [Tower] Pulling latest images...
+docker compose pull tower-api tower-rpc tower-web
+if %errorlevel% neq 0 goto :pull_fail
+
+echo [Tower] Restarting services...
+docker compose up -d tower-api tower-rpc tower-web
+if %errorlevel% neq 0 goto :restart_fail
+
+echo [Tower] Cleaning up old images...
+for /f "tokens=*" %%i in ('docker images --filter "dangling=true" --filter "reference=registry.cn-hangzhou.aliyuncs.com/txf7/tower-*" -q 2^>nul') do docker rmi %%i 2>nul
+
+if not "%REMOTE_VERSION%"=="unknown" (
+    >VERSION echo %REMOTE_VERSION%
+    echo [Tower] Updated local version to: %REMOTE_VERSION%
+)
+
+echo.
+echo [Tower] Upgrade complete!
+call :show_status_inline
+goto :pause_return
+
+:restart_fail
+echo [Tower] Restart failed.
+goto :pause_return
+
+:uninstall
+echo.
+echo [Tower] WARNING: This will delete all Tower containers!
+set /p "confirm=Confirm uninstall? (Y/N): "
+if /i not "!confirm!"=="Y" goto :cancel_uninstall
+
+set /p "del_data=Delete data volumes too? (Y/N): "
+if /i "!del_data!"=="Y" (
+    echo [Tower] Stopping and removing containers and volumes...
+    docker compose down -v
+    docker compose -f docker-compose-worker.yaml down -v 2>nul
+) else (
+    echo [Tower] Stopping and removing containers...
+    docker compose down
+    docker compose -f docker-compose-worker.yaml down 2>nul
+)
+
+set /p "del_images=Delete images? (Y/N): "
+if /i "!del_images!"=="Y" (
+    echo [Tower] Deleting images...
+    docker rmi registry.cn-hangzhou.aliyuncs.com/txf7/tower-api:latest 2>nul
+    docker rmi registry.cn-hangzhou.aliyuncs.com/txf7/tower-rpc:latest 2>nul
+    docker rmi registry.cn-hangzhou.aliyuncs.com/txf7/tower-web:latest 2>nul
+    docker rmi registry.cn-hangzhou.aliyuncs.com/txf7/tower-worker:latest 2>nul
+)
+
+echo [Tower] Uninstall complete.
+set "LOCAL_VERSION=Not Installed"
+goto :pause_return
+
+:cancel_uninstall
+echo [Tower] Uninstall cancelled.
+goto :pause_return
+
+:status
+call :show_status_inline
+goto :pause_return
+
+:show_status_inline
+echo.
+echo [Tower] Current Status:
+echo ----------------------------------------
+echo Local Version:  %LOCAL_VERSION%
+echo ----------------------------------------
+docker compose ps
+echo ----------------------------------------
+goto :eof
+
+:logs
+echo.
+echo Select Service Log:
+echo 1. tower-api
+echo 2. tower-rpc
+echo 3. tower-web
+echo 4. All Services
+echo 0. Back
+set /p "log_opt=Enter option: "
+
+if "%log_opt%"=="1" docker logs -f --tail 100 tower_api
+if "%log_opt%"=="2" docker logs -f --tail 100 tower_rpc
+if "%log_opt%"=="3" docker logs -f --tail 100 tower_web
+if "%log_opt%"=="4" docker compose logs -f --tail 100
+if "%log_opt%"=="0" goto :main_menu
+goto :pause_return
+
+:start
+echo.
+echo [Tower] Starting services...
+docker compose up -d
+if %errorlevel% neq 0 (
+    echo [Tower] Start failed.
+    goto :pause_return
+)
+echo [Tower] Services started.
+goto :pause_return
+
+:stop
+echo.
+echo [Tower] Stopping services...
+docker compose stop
+if %errorlevel% neq 0 (
+    echo [Tower] Stop failed.
+    goto :pause_return
+)
+echo [Tower] Services stopped.
+goto :pause_return
+
+:restart
+echo.
+echo [Tower] Restarting services...
+docker compose restart tower-api tower-rpc tower-web
+if %errorlevel% neq 0 (
+    echo [Tower] Restart failed.
+    goto :pause_return
+)
+echo [Tower] Restart complete.
+goto :pause_return
+
+:pause_return
+echo.
+pause
+goto :main_menu
+
+:fetch_remote_version
+set "REMOTE_VERSION=unknown"
+set "GITHUB_RESPONSE="
+for /f "usebackq delims=" %%r in (`curl -s --connect-timeout 5 --max-time 10 "%GITHUB_RAW%/VERSION" 2^>nul`) do set "GITHUB_RESPONSE=%%r"
+
+if defined GITHUB_RESPONSE (
+    REM Filter out error responses (HTML or "Not Found")
+    echo !GITHUB_RESPONSE! | findstr /i "Not Found" >nul 2>&1
+    if !errorlevel! neq 0 (
+        echo !GITHUB_RESPONSE! | findstr "<" >nul 2>&1
+        if !errorlevel! neq 0 (
+            for /f "tokens=* delims= " %%a in ("!GITHUB_RESPONSE!") do set "REMOTE_VERSION=%%a"
+        )
+    )
+)
+
+REM Trim trailing spaces
+:trim_remote
+if "!REMOTE_VERSION:~-1!"==" " set "REMOTE_VERSION=!REMOTE_VERSION:~0,-1!" & goto :trim_remote
+goto :eof

@@ -1,0 +1,151 @@
+package middleware
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"strings"
+
+	"github.com/golang-jwt/jwt/v4"
+)
+
+type ContextKey string
+
+const (
+	UserIdKey      ContextKey = "userId"
+	UsernameKey    ContextKey = "username"
+	RoleKey        ContextKey = "role"
+	WorkspaceIdKey ContextKey = "workspaceId"
+)
+
+type AuthMiddleware struct {
+	AccessSecret string
+}
+
+func NewAuthMiddleware(accessSecret string) *AuthMiddleware {
+	return &AuthMiddleware{
+		AccessSecret: accessSecret,
+	}
+}
+
+func (m *AuthMiddleware) Handle(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var tokenStr string
+
+		// 优先从Header获取Token
+		authHeader := r.Header.Get("Authorization")
+		if authHeader != "" {
+			// 解析Bearer Token
+			parts := strings.SplitN(authHeader, " ", 2)
+			if len(parts) == 2 && parts[0] == "Bearer" {
+				tokenStr = parts[1]
+			}
+		}
+
+		// 如果Header中没有，尝试从URL查询参数获取（用于SSE等不支持自定义Header的场景）
+		if tokenStr == "" {
+			tokenStr = r.URL.Query().Get("token")
+		}
+
+		if tokenStr == "" {
+			unauthorized(w, "未提供认证信息")
+			return
+		}
+
+		// 验证Token（强制校验签名算法为HMAC，防止算法混淆攻击）
+		token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
+			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+			}
+			return []byte(m.AccessSecret), nil
+		})
+		if err != nil || !token.Valid {
+			unauthorized(w, "Token无效或已过期")
+			return
+		}
+
+		// 提取Claims
+		claims, ok := token.Claims.(jwt.MapClaims)
+		if !ok {
+			unauthorized(w, "Token解析失败")
+			return
+		}
+
+		// 将用户信息存入Context（确保类型为string）
+		ctx := r.Context()
+		if userId, ok := claims["userId"].(string); ok {
+			ctx = context.WithValue(ctx, UserIdKey, userId)
+		}
+		if username, ok := claims["username"].(string); ok {
+			ctx = context.WithValue(ctx, UsernameKey, username)
+		}
+		if role, ok := claims["role"].(string); ok {
+			ctx = context.WithValue(ctx, RoleKey, role)
+		}
+
+		// 从Header获取当前工作空间
+		workspaceId := r.Header.Get("X-Workspace-Id")
+		ctx = context.WithValue(ctx, WorkspaceIdKey, workspaceId)
+
+		next(w, r.WithContext(ctx))
+	}
+}
+
+func unauthorized(w http.ResponseWriter, msg string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusUnauthorized)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"code": 401,
+		"msg":  msg,
+	})
+}
+
+// GetUserId 从Context获取用户ID
+func GetUserId(ctx context.Context) string {
+	if v := ctx.Value(UserIdKey); v != nil {
+		return v.(string)
+	}
+	return ""
+}
+
+// GetUsername 从Context获取用户名
+func GetUsername(ctx context.Context) string {
+	if v := ctx.Value(UsernameKey); v != nil {
+		return v.(string)
+	}
+	return ""
+}
+
+// GetRole 从Context获取角色
+func GetRole(ctx context.Context) string {
+	if v := ctx.Value(RoleKey); v != nil {
+		return v.(string)
+	}
+	return ""
+}
+
+// GetWorkspaceId 从Context获取工作空间ID
+func GetWorkspaceId(ctx context.Context) string {
+	if v := ctx.Value(WorkspaceIdKey); v != nil {
+		return v.(string)
+	}
+	return ""
+}
+
+// RequireAdmin 管理员权限中间件，需要先经过认证中间件
+func RequireAdmin(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		role := GetRole(r.Context())
+		if role != "admin" && role != "superadmin" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"code": 403,
+				"msg":  "需要管理员权限",
+			})
+			return
+		}
+		next(w, r)
+	}
+}

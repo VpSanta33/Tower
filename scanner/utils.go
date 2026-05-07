@@ -1,0 +1,636 @@
+package scanner
+
+import (
+	"net"
+	"strconv"
+	"strings"
+
+	"tower/pkg/utils"
+)
+
+// TargetParseResult 目标解析结果
+type TargetParseResult struct {
+	WithPort    []*ParsedTarget // 带端口的目标（直接使用，跳过端口扫描）
+	WithoutPort []string        // 不带端口的目标（需要端口扫描）
+}
+
+// ParsedTarget 解析后的目标
+type ParsedTarget struct {
+	Host     string
+	Port     int
+	Protocol string // http/https，空表示未指定
+	Path     string // URL路径，如 /admin/
+	Raw      string
+}
+
+// ParseTargetsForPortScan 解析目标，分离带端口和不带端口的目标
+// 用于优化端口扫描：带端口的目标直接使用，不需要端口发现
+func ParseTargetsForPortScan(target string) *TargetParseResult {
+	result := &TargetParseResult{
+		WithPort:    make([]*ParsedTarget, 0),
+		WithoutPort: make([]string, 0),
+	}
+
+	lines := strings.Split(target, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		// 使用工具函数解析目标
+		info := utils.ParseTarget(line)
+
+		if info.HasPort || info.Protocol != "" {
+			// 带端口或协议的目标
+			port := info.Port
+			if port == 0 {
+				// 根据协议推断端口
+				switch info.Protocol {
+				case "https":
+					port = 443
+				case "http":
+					port = 80
+				}
+			}
+			if port > 0 {
+				result.WithPort = append(result.WithPort, &ParsedTarget{
+					Host:     info.Host,
+					Port:     port,
+					Protocol: info.Protocol,
+					Path:     info.Path, // 保留URL路径
+					Raw:      line,
+				})
+			} else {
+				// 有协议但无法推断端口，仍需扫描
+				result.WithoutPort = append(result.WithoutPort, info.Host)
+			}
+		} else {
+			// 不带端口的目标，需要端口扫描
+			// 处理 CIDR 和 IP 范围
+			if strings.Contains(line, "/") {
+				if _, _, err := net.ParseCIDR(line); err == nil {
+					ips := expandCIDR(line)
+					result.WithoutPort = append(result.WithoutPort, ips...)
+					continue
+				}
+			}
+			if strings.Contains(line, "-") && !containsDomainTLD(line) {
+				parts := strings.Split(line, "-")
+				if len(parts) == 2 && net.ParseIP(strings.TrimSpace(parts[0])) != nil {
+					ips := expandIPRange(line)
+					if len(ips) > 0 {
+						result.WithoutPort = append(result.WithoutPort, ips...)
+						continue
+					}
+				}
+			}
+			result.WithoutPort = append(result.WithoutPort, line)
+		}
+	}
+
+	return result
+}
+
+// ParseTargetsForFingerprint 解析目标用于指纹识别
+// 支持带路径的URL格式，如 http://example.com/admin/
+func ParseTargetsForFingerprint(target string) []*ParsedTarget {
+	var targets []*ParsedTarget
+
+	lines := strings.Split(target, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		info := utils.ParseTarget(line)
+		if info.Host == "" {
+			continue
+		}
+
+		port := info.Port
+		protocol := info.Protocol
+
+		// 如果没有端口，根据协议推断
+		if port == 0 {
+			switch protocol {
+			case "https":
+				port = 443
+			case "http":
+				port = 80
+			default:
+				// 默认使用 80 端口
+				port = 80
+				protocol = "http"
+			}
+		}
+
+		// 如果没有协议，根据端口推断
+		if protocol == "" {
+			if port == 443 || port == 8443 || port == 9443 {
+				protocol = "https"
+			} else {
+				protocol = "http"
+			}
+		}
+
+		targets = append(targets, &ParsedTarget{
+			Host:     info.Host,
+			Port:     port,
+			Protocol: protocol,
+			Path:     info.Path,
+			Raw:      line,
+		})
+	}
+
+	return targets
+}
+
+// GenerateAssetsFromTargets 从用户输入的目标生成资产列表
+// 用于当用户只勾选部分扫描模块时，直接使用输入目标进行扫描
+// 域名无法解析到有效IPv4/IPv6地址时，该目标会被跳过
+func GenerateAssetsFromTargets(target string) []*Asset {
+	return generateAssetsFromTargetsWithResolver(target, &stdlibResolver{})
+}
+
+// GenerateAssetsFromTargetsWithoutDNS 从用户输入的目标生成资产列表，但不进行同步DNS解析
+func GenerateAssetsFromTargetsWithoutDNS(target string) []*Asset {
+	return generateAssetsFromTargetsWithResolver(target, nil)
+}
+
+func generateAssetsFromTargetsWithResolver(target string, resolver dnsResolver) []*Asset {
+	var assets []*Asset
+
+	lines := strings.Split(target, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		info := utils.ParseTarget(line)
+		if info.Host == "" {
+			continue
+		}
+
+		category := getCategory(info.Host)
+
+		// 用户明确指定了协议或端口时，只生成对应的单个资产
+		if info.Protocol != "" || info.HasPort {
+			asset := buildAssetFromParsed(parseSingleTarget(info), category, resolver)
+			if asset == nil {
+				continue
+			}
+			assets = append(assets, asset)
+		} else {
+			// 用户输入纯域名/IP（无协议无端口），默认传不带端口的目标
+			asset := &Asset{
+				Host:      info.Host,
+				Port:      0,
+				Category:  category,
+				Source:    "user_input",
+				IsHTTP:    true,
+				Authority: info.Host,
+				Service:   "",
+			}
+			asset = enrichAssetWithDNS(asset, resolver)
+			// 域名目标DNS解析失败（无有效IP），跳过该目标
+			if asset == nil {
+				continue
+			}
+			assets = append(assets, asset)
+		}
+	}
+
+	return assets
+}
+
+// parseSingleTarget 将 TargetInfo 转换为 ParsedTarget（用于有明确协议或端口的情况）
+func parseSingleTarget(info *utils.TargetInfo) *ParsedTarget {
+	port := info.Port
+	protocol := info.Protocol
+
+	if port == 0 {
+		if protocol == "https" {
+			port = 443
+		} else {
+			port = 80
+			if protocol == "" {
+				protocol = "http"
+			}
+		}
+	}
+	if protocol == "" {
+		if port == 443 || port == 8443 || port == 9443 {
+			protocol = "https"
+		} else {
+			protocol = "http"
+		}
+	}
+
+	return &ParsedTarget{
+		Host:     info.Host,
+		Port:     port,
+		Protocol: protocol,
+		Path:     info.Path,
+		Raw:      info.Raw,
+	}
+}
+
+// buildAssetFromParsed 从 ParsedTarget 构建 Asset
+// 域名DNS解析失败时返回nil
+func buildAssetFromParsed(pt *ParsedTarget, category string, resolver dnsResolver) *Asset {
+	asset := &Asset{
+		Host:     pt.Host,
+		Port:     pt.Port,
+		Category: category,
+		Source:   "user_input",
+		IsHTTP:   true,
+	}
+
+	if pt.Port == 80 || pt.Port == 443 {
+		asset.Authority = pt.Host
+	} else {
+		asset.Authority = net.JoinHostPort(pt.Host, strconv.Itoa(pt.Port))
+	}
+
+	asset.Service = pt.Protocol
+
+	if pt.Path != "" && pt.Path != "/" {
+		asset.Path = pt.Path
+	}
+
+	asset = enrichAssetWithDNS(asset, resolver)
+	// 域名DNS解析失败，跳过该目标
+	if asset == nil {
+		return nil
+	}
+
+	return asset
+}
+
+func enrichAssetWithDNS(asset *Asset, resolver dnsResolver) *Asset {
+	if asset == nil || asset.Host == "" || getCategory(asset.Host) != "domain" || resolver == nil {
+		return asset
+	}
+
+	resolved := resolveSingleDomainAsset(asset.Host, resolver)
+	if resolved == nil {
+		// 域名无法解析到有效IPv4/IPv6地址，返回nil让调用方跳过该目标
+		return nil
+	}
+
+	asset.IPV4 = resolved.IPV4
+	asset.IPV6 = resolved.IPV6
+	asset.CName = resolved.CName
+	return asset
+}
+
+// containsDomainTLD 检查是否包含常见域名后缀
+func containsDomainTLD(s string) bool {
+	tlds := []string{".com", ".net", ".org", ".cn", ".io", ".co", ".edu", ".gov", ".mil"}
+	lower := strings.ToLower(s)
+	for _, tld := range tlds {
+		if strings.Contains(lower, tld) {
+			return true
+		}
+	}
+	return false
+}
+
+// parseTargets 解析目标
+func parseTargets(target string) []string {
+	var targets []string
+	lines := strings.Split(target, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		// 支持CIDR格式
+		if strings.Contains(line, "/") {
+			// 检查是否是有效的CIDR（必须是IP地址格式）
+			if _, _, err := net.ParseCIDR(line); err == nil {
+				ips := expandCIDR(line)
+				targets = append(targets, ips...)
+				continue
+			}
+		}
+		// 支持IP范围格式（如 192.168.1.1-192.168.1.100）
+		// 只有当格式为 IP-IP 时才解析为范围，避免误解析域名中的连字符
+		if strings.Contains(line, "-") && !containsDomainTLD(line) {
+			parts := strings.Split(line, "-")
+			if len(parts) == 2 {
+				startIP := net.ParseIP(strings.TrimSpace(parts[0]))
+				// 只有当起始部分是有效IP时才当作IP范围处理
+				if startIP != nil {
+					ips := expandIPRange(line)
+					if len(ips) > 0 {
+						targets = append(targets, ips...)
+						continue
+					}
+				}
+			}
+		}
+
+		// 使用 utils.ParseTarget 解析并清洗目标
+		// 处理 URL (http://...), 带端口 (host:port), 带路径 (/path) 等情况
+		// 确保返回给端口扫描器的是纯净的 Host 或 Host:Port
+		info := utils.ParseTarget(line)
+		if info.Host != "" {
+			if info.HasPort {
+				// 如果有端口，保留 Host:Port 格式
+				targets = append(targets, net.JoinHostPort(info.Host, strconv.Itoa(info.Port)))
+			} else {
+				// 否则只返回 Host
+				targets = append(targets, info.Host)
+			}
+		}
+	}
+	return targets
+}
+
+// parsePorts 解析端口
+func parsePorts(portStr string) []int {
+	var ports []int
+	portStr = strings.TrimSpace(portStr)
+
+	// 预定义端口集
+	if portStr == "top100" {
+		return GetTop100Ports()
+	}
+	if portStr == "top1000" {
+		return GetTop1000Ports()
+	}
+
+	parts := strings.Split(portStr, ",")
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if strings.Contains(part, "-") {
+			// 端口范围
+			rangeParts := strings.Split(part, "-")
+			if len(rangeParts) == 2 {
+				start, _ := strconv.Atoi(rangeParts[0])
+				end, _ := strconv.Atoi(rangeParts[1])
+				if start <= 0 {
+					start = 1
+				}
+				for p := start; p <= end; p++ {
+					ports = append(ports, p)
+				}
+			}
+		} else {
+			// 单个端口
+			if p, err := strconv.Atoi(part); err == nil && p > 0 {
+				ports = append(ports, p)
+			}
+		}
+	}
+	return ports
+}
+
+// getCategory 获取目标类型
+func getCategory(target string) string {
+	ip := net.ParseIP(target)
+	if ip == nil {
+		return "domain"
+	}
+	if ip.To4() != nil {
+		return "ipv4"
+	}
+	return "ipv6"
+}
+
+const MaxTargetCount = 2048
+
+// expandCIDR 展开CIDR
+func expandCIDR(cidr string) []string {
+	var ips []string
+	_, ipnet, err := net.ParseCIDR(cidr)
+	if err != nil {
+		return ips
+	}
+	count := 0
+	for ip := ipnet.IP.Mask(ipnet.Mask); ipnet.Contains(ip); {
+		count++
+		if count > MaxTargetCount {
+			break
+		}
+		ips = append(ips, ip.String())
+		if incIP(ip) {
+			break
+		}
+	}
+
+	// 移除网络地址和广播地址
+	if len(ips) > 2 {
+		ips = ips[1 : len(ips)-1]
+	}
+	return ips
+}
+
+// incIP IP自增, 如果溢出(达到 255.255.255.255 或 IPv6最大值)则返回 true
+func incIP(ip net.IP) bool {
+	for j := len(ip) - 1; j >= 0; j-- {
+		ip[j]++
+		if ip[j] > 0 {
+			return false
+		}
+	}
+	return true
+}
+
+// expandIPRange 展开IP范围
+func expandIPRange(ipRange string) []string {
+	var ips []string
+	parts := strings.Split(ipRange, "-")
+	if len(parts) != 2 {
+		return ips
+	}
+
+	startIP := net.ParseIP(strings.TrimSpace(parts[0]))
+	endIP := net.ParseIP(strings.TrimSpace(parts[1]))
+	if startIP == nil || endIP == nil {
+		return ips
+	}
+
+	for ip := startIP; !ip.Equal(endIP); {
+		ips = append(ips, ip.String())
+		if incIP(ip) {
+			break
+		}
+	}
+	ips = append(ips, endIP.String())
+
+	return ips
+}
+
+// GetTop100Ports 获取Top100端口
+func GetTop100Ports() []int {
+	return []int{
+		21, 22, 23, 25, 53, 67, 68, 69, 80, 110,
+		111, 123, 135, 137, 138, 139, 143, 161, 162, 389,
+		443, 445, 465, 514, 515, 587, 631, 636, 993, 995,
+		1080, 1194, 1433, 1434, 1521, 1723, 1883, 1900, 2049, 2082,
+		2083, 2086, 2087, 2123, 2181, 2375, 2376, 2379, 3000, 3306,
+		3389, 5432, 5601, 5672, 5900, 5938, 5984, 6000, 6379, 6443,
+		6666, 6667, 6668, 6669, 8000, 8008, 8009, 8080, 8081, 8088,
+		8090, 8181, 8200, 8443, 8500, 8649, 8888, 9000, 9001, 9042,
+		9092, 9100, 9200, 9300, 9418, 9999, 10000, 11211, 15672, 27017,
+		27018, 27019, 28017, 50000, 50070, 50075,
+	}
+}
+
+// GetTop1000Ports 获取Top1000端口
+func GetTop1000Ports() []int {
+	ports := GetTop100Ports()
+	// 添加更多常用端口
+	additionalPorts := []int{
+		1, 3, 4, 6, 7, 9, 13, 17, 19, 20, 24, 26, 30, 32, 33, 37, 42, 43, 49, 70,
+		79, 81, 82, 83, 84, 85, 88, 89, 90, 99, 100, 106, 109, 113, 119, 125, 144,
+		146, 163, 179, 199, 211, 212, 222, 254, 255, 256, 259, 264, 280, 301, 306,
+		311, 340, 366, 406, 407, 416, 417, 425, 427, 444, 458, 464, 481, 497, 500,
+		512, 513, 524, 541, 543, 544, 545, 548, 554, 555, 563, 593, 616, 617, 625,
+		646, 648, 666, 667, 668, 683, 687, 691, 700, 705, 711, 714, 720, 722, 726,
+		749, 765, 777, 783, 787, 800, 801, 808, 843, 873, 880, 888, 898, 900, 901,
+		902, 903, 911, 912, 981, 987, 990, 992, 999, 1000, 1001, 1002, 1007, 1009,
+		1010, 1011, 1021, 1022, 1023, 1024, 1025, 1026, 1027, 1028, 1029, 1030,
+		1031, 1032, 1033, 1034, 1035, 1036, 1037, 1038, 1039, 1040, 1041, 1042,
+		1043, 1044, 1045, 1046, 1047, 1048, 1049, 1050, 1051, 1052, 1053, 1054,
+		1055, 1056, 1057, 1058, 1059, 1060, 1061, 1062, 1063, 1064, 1065, 1066,
+		1067, 1068, 1069, 1070, 1071, 1072, 1073, 1074, 1075, 1076, 1077, 1078,
+		1079, 1081, 1082, 1083, 1084, 1085, 1086, 1087, 1088, 1089, 1090, 1091,
+		1092, 1093, 1094, 1095, 1096, 1097, 1098, 1099, 1100, 1102, 1104, 1105,
+		1106, 1107, 1108, 1110, 1111, 1112, 1113, 1114, 1117, 1119, 1121, 1122,
+		1123, 1124, 1126, 1130, 1131, 1132, 1137, 1138, 1141, 1145, 1147, 1148,
+		1149, 1151, 1152, 1154, 1163, 1164, 1165, 1166, 1169, 1174, 1175, 1183,
+		1185, 1186, 1187, 1192, 1198, 1199, 1201, 1213, 1216, 1217, 1218, 1233,
+		1234, 1236, 1244, 1247, 1248, 1259, 1271, 1272, 1277, 1287, 1296, 1300,
+		1301, 1309, 1310, 1311, 1322, 1328, 1334, 1352, 1417, 1443, 1455, 1461,
+		1494, 1500, 1501, 1503, 1524, 1533, 1556, 1580, 1583, 1594, 1600, 1641,
+		1658, 1666, 1687, 1688, 1700, 1717, 1718, 1719, 1720, 1721, 1755, 1761,
+		1782, 1783, 1801, 1805, 1812, 1839, 1840, 1862, 1863, 1864, 1875, 1914,
+		1935, 1947, 1971, 1972, 1974, 1984, 1998, 1999, 2000, 2001, 2002, 2003,
+		2004, 2005, 2006, 2007, 2008, 2009, 2010, 2013, 2020, 2021, 2022, 2030,
+		2033, 2034, 2035, 2038, 2040, 2041, 2042, 2043, 2045, 2046, 2047, 2048,
+		2065, 2068, 2099, 2100, 2103, 2105, 2106, 2107, 2111, 2119, 2121, 2126,
+		2135, 2144, 2160, 2161, 2170, 2179, 2190, 2191, 2196, 2200, 2222, 2251,
+		2260, 2288, 2301, 2323, 2366, 2381, 2382, 2383, 2393, 2394, 2399, 2401,
+		2492, 2500, 2522, 2525, 2557, 2601, 2602, 2604, 2605, 2607, 2608, 2638,
+		2701, 2702, 2710, 2717, 2718, 2725, 2800, 2809, 2811, 2869, 2875, 2909,
+		2910, 2920, 2967, 2968, 2998, 3001, 3003, 3005, 3006, 3007, 3011, 3013,
+		3017, 3030, 3031, 3052, 3071, 3077, 3128, 3168, 3211, 3221, 3260, 3261,
+		3268, 3269, 3283, 3300, 3301, 3322, 3323, 3324, 3325, 3333, 3351, 3367,
+		3369, 3370, 3371, 3372, 3390, 3404, 3476, 3493, 3517, 3527, 3546, 3551,
+		3580, 3659, 3689, 3690, 3703, 3737, 3766, 3784, 3800, 3801, 3809, 3814,
+		3826, 3827, 3828, 3851, 3869, 3871, 3878, 3880, 3889, 3905, 3914, 3918,
+		3920, 3945, 3971, 3986, 3995, 3998, 4000, 4001, 4002, 4003, 4004, 4005,
+		4006, 4045, 4111, 4125, 4126, 4129, 4224, 4242, 4279, 4321, 4343, 4443,
+		4444, 4445, 4446, 4449, 4550, 4567, 4662, 4848, 4899, 4900, 4998, 5000,
+		5001, 5002, 5003, 5004, 5009, 5030, 5033, 5050, 5051, 5054, 5060, 5061,
+		5080, 5087, 5100, 5101, 5102, 5120, 5190, 5200, 5214, 5221, 5222, 5225,
+		5226, 5269, 5280, 5298, 5357, 5405, 5414, 5431, 5440, 5500, 5510, 5544,
+		5550, 5555, 5560, 5566, 5631, 5633, 5666, 5678, 5679, 5718, 5730, 5800,
+		5801, 5802, 5810, 5811, 5815, 5822, 5825, 5850, 5859, 5862, 5877, 5901,
+		5902, 5903, 5904, 5906, 5907, 5910, 5911, 5915, 5922, 5925, 5950, 5952,
+		5959, 5960, 5961, 5962, 5963, 5987, 5988, 5989, 5998, 5999, 6001, 6002,
+		6003, 6004, 6005, 6006, 6007, 6009, 6025, 6059, 6100, 6101, 6106, 6112,
+		6123, 6129, 6156, 6346, 6389, 6502, 6510, 6543, 6547, 6565, 6566, 6567,
+		6580, 6646, 6689, 6692, 6699, 6779, 6788, 6789, 6792, 6839, 6881, 6901,
+		6969, 7000, 7001, 7002, 7004, 7007, 7019, 7025, 7070, 7100, 7103, 7106,
+		7200, 7201, 7402, 7435, 7443, 7496, 7512, 7625, 7627, 7676, 7741, 7777,
+		7778, 7800, 7911, 7920, 7921, 7937, 7938, 7999, 8001, 8002, 8007, 8010,
+		8011, 8021, 8022, 8031, 8042, 8045, 8082, 8083, 8084, 8085, 8086, 8087,
+		8089, 8093, 8099, 8100, 8180, 8192, 8193, 8194, 8222, 8254, 8290, 8291,
+		8292, 8300, 8333, 8383, 8400, 8402, 8600, 8651, 8652, 8654, 8701, 8800,
+		8873, 8899, 8994, 9002, 9003, 9009, 9010, 9011, 9040, 9050, 9071, 9080,
+		9081, 9090, 9091, 9099, 9101, 9102, 9103, 9110, 9111, 9207, 9220, 9290,
+		9415, 9485, 9500, 9502, 9503, 9535, 9575, 9593, 9594, 9595, 9618, 9666,
+		9876, 9877, 9878, 9898, 9900, 9917, 9929, 9943, 9944, 9968, 9998, 10001,
+		10002, 10003, 10004, 10009, 10010, 10012, 10024, 10025, 10082, 10180,
+		10215, 10243, 10566, 10616, 10617, 10621, 10626, 10628, 10629, 10778,
+		11110, 11111, 11967, 12000, 12174, 12265, 12345, 13456, 13722, 13782,
+		13783, 14000, 14238, 14441, 14442, 15000, 15002, 15003, 15004, 15660,
+		15742, 16000, 16001, 16012, 16016, 16018, 16080, 16113, 16992, 16993,
+		17877, 17988, 18040, 18101, 18988, 19101, 19283, 19315, 19350, 19780,
+		19801, 19842, 20000, 20005, 20031, 20221, 20222, 20828, 21571, 22939,
+		23502, 24444, 24800, 25734, 25735, 26214, 27000, 27352, 27353, 27355,
+		27356, 27715, 28201, 30000, 30718, 30951, 31038, 31337, 32768, 32769,
+		32770, 32771, 32772, 32773, 32774, 32775, 32776, 32777, 32778, 32779,
+		32780, 32781, 32782, 32783, 32784, 32785, 33354, 33899, 34571, 34572,
+		34573, 35500, 38292, 40193, 40911, 41511, 42510, 44176, 44442, 44443,
+		44501, 45100, 48080, 49152, 49153, 49154, 49155, 49156, 49157, 49158,
+		49159, 49160, 49161, 49163, 49165, 49167, 49175, 49176, 49400, 49999,
+		50001, 50002, 50003, 50006, 50300, 50389, 50500, 50636, 50800, 51103,
+		51493, 52673, 52822, 52848, 52869, 54045, 54328, 55055, 55056, 55555,
+		55600, 56737, 56738, 57294, 57797, 58080, 60020, 60443, 61532, 61900,
+		62078, 63331, 64623, 64680, 65000, 65129, 65389,
+	}
+
+	// 使用 map 去重
+	seen := make(map[int]bool)
+	result := make([]int, 0, len(ports)+len(additionalPorts))
+
+	for _, port := range ports {
+		if !seen[port] {
+			seen[port] = true
+			result = append(result, port)
+		}
+	}
+
+	for _, port := range additionalPorts {
+		if !seen[port] {
+			seen[port] = true
+			result = append(result, port)
+		}
+	}
+
+	return result
+}
+
+// portsToString 将端口数组转换为逗号分隔的字符串
+func portsToString(ports []int) string {
+	strs := make([]string, len(ports))
+	for i, p := range ports {
+		strs[i] = strconv.Itoa(p)
+	}
+	return strings.Join(strs, ",")
+}
+
+// IsHTTPService 判断是否为HTTP服务
+// 优先使用数据库中的HTTP服务设置（端口+服务映射），如果没有配置则使用默认规则
+func IsHTTPService(service string, port int) bool {
+	serviceLower := strings.ToLower(service)
+
+	// 1. 优先使用全局HTTP服务检查器（从数据库加载的配置）
+	if globalHttpServiceChecker != nil {
+		// 使用综合判断方法（同时检查服务名称和端口）
+		return globalHttpServiceChecker.CheckIsHttp(serviceLower, port)
+	}
+
+	// 2. 回退到默认规则：根据服务名称判断
+	httpServices := []string{"http", "https", "http-proxy", "http-alt", "https-alt", "ssl/http", "ssl/https"}
+	for _, hs := range httpServices {
+		if serviceLower == hs {
+			return true
+		}
+	}
+
+	// 3. 回退到默认规则：根据常见HTTP端口判断
+	httpPorts := map[int]bool{
+		80: true, 443: true, 8080: true, 8443: true, 8000: true, 8888: true,
+		8081: true, 8082: true, 8083: true, 8084: true, 8085: true, 8086: true,
+		8087: true, 8088: true, 8089: true, 8090: true, 9000: true, 9001: true,
+		9080: true, 9443: true, 3000: true, 3001: true, 5000: true, 5001: true,
+		4443: true, 8008: true, 8009: true, 8181: true, 8200: true, 8300: true,
+		8400: true, 8500: true, 8600: true, 8800: true, 8880: true, 8983: true,
+		9090: true, 9091: true, 9200: true, 9300: true, 10000: true, 10443: true,
+	}
+	if httpPorts[port] {
+		return true
+	}
+
+	// 4. 如果服务名为空且端口不在已知HTTP端口列表中，默认认为不是HTTP
+	return false
+}

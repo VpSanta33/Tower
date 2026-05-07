@@ -1,0 +1,107 @@
+package onlineapi
+
+import (
+	"net/http"
+
+	"tower/api/internal/logic"
+	"tower/api/internal/middleware"
+	"tower/api/internal/svc"
+	"tower/api/internal/types"
+	"tower/pkg/response"
+
+	"github.com/zeromicro/go-zero/rest/httpx"
+)
+
+// OnlineSearchHandler 在线API搜索
+func OnlineSearchHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req types.OnlineSearchReq
+		if err := httpx.Parse(r, &req); err != nil {
+			response.ParamError(w, err.Error())
+			return
+		}
+
+		workspaceId := middleware.GetWorkspaceId(r.Context())
+		l := logic.NewOnlineAPILogic(r.Context(), svcCtx)
+		resp, err := l.Search(&req, workspaceId)
+		if err != nil {
+			response.Error(w, err)
+			return
+		}
+		httpx.OkJson(w, resp)
+	}
+}
+
+// OnlineImportHandler 在线API导入
+func OnlineImportHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req types.OnlineImportReq
+		if err := httpx.Parse(r, &req); err != nil {
+			response.ParamError(w, err.Error())
+			return
+		}
+
+		workspaceId := middleware.GetWorkspaceId(r.Context())
+		l := logic.NewOnlineAPILogic(r.Context(), svcCtx)
+		resp, err := l.Import(&req, workspaceId)
+		if err != nil {
+			response.Error(w, err)
+			return
+		}
+		httpx.OkJson(w, resp)
+	}
+}
+
+// APIConfigListHandler API配置列表
+func APIConfigListHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		workspaceId := middleware.GetWorkspaceId(r.Context())
+		l := logic.NewOnlineAPILogic(r.Context(), svcCtx)
+		resp, err := l.ConfigList(workspaceId)
+		if err != nil {
+			response.Error(w, err)
+			return
+		}
+		httpx.OkJson(w, resp)
+	}
+}
+
+// APIConfigSaveHandler 保存API配置
+func APIConfigSaveHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req types.APIConfigSaveReq
+		if err := httpx.Parse(r, &req); err != nil {
+			response.ParamError(w, err.Error())
+			return
+		}
+
+		workspaceId := middleware.GetWorkspaceId(r.Context())
+		l := logic.NewOnlineAPILogic(r.Context(), svcCtx)
+		resp, err := l.ConfigSave(&req, workspaceId)
+		if err != nil {
+			response.Error(w, err)
+			return
+		}
+		httpx.OkJson(w, resp)
+	}
+}
+
+// OnlineImportAllHandler 导入全部资产（自动遍历所有页面）
+func OnlineImportAllHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req types.OnlineImportAllReq
+		if err := httpx.Parse(r, &req); err != nil {
+			response.ParamError(w, err.Error())
+			return
+		}
+
+		workspaceId := middleware.GetWorkspaceId(r.Context())
+		l := logic.NewOnlineAPILogic(r.Context(), svcCtx)
+		resp, err := l.ImportAll(&req, workspaceId)
+		if err != nil {
+			response.Error(w, err)
+			return
+		}
+		httpx.OkJson(w, resp)
+	}
+}

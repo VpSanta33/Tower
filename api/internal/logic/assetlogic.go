@@ -1,0 +1,1081 @@
+package logic
+
+import (
+	"context"
+	"encoding/base64"
+	"fmt"
+	"net"
+	"regexp"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+
+	"tower/api/internal/logic/common"
+	"tower/api/internal/svc"
+	"tower/api/internal/types"
+	"tower/model"
+
+	"github.com/zeromicro/go-zero/core/logx"
+	"go.mongodb.org/mongo-driver/bson"
+)
+
+// isValidImageBytes 检查二进制数据是否为有效的图片格式（通过魔数判断）
+func isValidImageBytes(data []byte) bool {
+	if len(data) < 4 {
+		return false
+	}
+	// PNG: 89 50 4E 47
+	if data[0] == 0x89 && data[1] == 0x50 && data[2] == 0x4E && data[3] == 0x47 {
+		return true
+	}
+	// JPEG: FF D8 FF
+	if data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF {
+		return true
+	}
+	// GIF: 47 49 46 38
+	if data[0] == 0x47 && data[1] == 0x49 && data[2] == 0x46 && data[3] == 0x38 {
+		return true
+	}
+	// ICO: 00 00 01 00 or 00 00 02 00
+	if data[0] == 0x00 && data[1] == 0x00 && (data[2] == 0x01 || data[2] == 0x02) && data[3] == 0x00 {
+		return true
+	}
+	// BMP: 42 4D
+	if data[0] == 0x42 && data[1] == 0x4D {
+		return true
+	}
+	// WebP: RIFF....WEBP
+	if len(data) >= 12 && data[0] == 0x52 && data[1] == 0x49 && data[2] == 0x46 && data[3] == 0x46 &&
+		data[8] == 0x57 && data[9] == 0x45 && data[10] == 0x42 && data[11] == 0x50 {
+		return true
+	}
+	// SVG: 以 '<svg' 或 '<?xml' 开头（文本格式）
+	if data[0] == '<' {
+		header := strings.ToLower(string(data[:min(len(data), 100)]))
+		if strings.HasPrefix(header, "<svg") || (strings.HasPrefix(header, "<?xml") && strings.Contains(header, "<svg")) {
+			return true
+		}
+	}
+	return false
+}
+
+// formatTimeIfNotZero 格式化时间，如果是零值则返回空字符串
+func formatTimeIfNotZero(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.Local().Format("2006-01-02 15:04:05")
+}
+
+// cleanAppName 清理指纹名称，去掉类似 [custom(xxx)] 的后缀
+func cleanAppName(app string) string {
+	// 匹配 [xxx] 或 [xxx(yyy)] 格式的后缀并去掉
+	re := regexp.MustCompile(`\s*\[.*\]\s*$`)
+	return strings.TrimSpace(re.ReplaceAllString(app, ""))
+}
+
+// sortAssetsByTime 按时间排序资产
+func sortAssetsByTime(assets []model.Asset, byUpdateTime bool) {
+	sort.Slice(assets, func(i, j int) bool {
+		if byUpdateTime {
+			return assets[i].UpdateTime.After(assets[j].UpdateTime)
+		}
+		return assets[i].CreateTime.After(assets[j].CreateTime)
+	})
+}
+
+// sortMapToStatItems 将 map 转换为排序后的 StatItem 列表
+func sortMapToStatItems(m map[string]int, limit int) []types.StatItem {
+	type kv struct {
+		Key   string
+		Value int
+	}
+	var sorted []kv
+	for k, v := range m {
+		sorted = append(sorted, kv{k, v})
+	}
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].Value > sorted[j].Value
+	})
+
+	result := make([]types.StatItem, 0, limit)
+	for i, item := range sorted {
+		if i >= limit {
+			break
+		}
+		result = append(result, types.StatItem{Name: item.Key, Count: item.Value})
+	}
+	return result
+}
+
+// sortMapToStatItemsInt 将 int key 的 map 转换为排序后的 StatItem 列表
+func sortMapToStatItemsInt(m map[int]int, limit int) []types.StatItem {
+	type kv struct {
+		Key   int
+		Value int
+	}
+	var sorted []kv
+	for k, v := range m {
+		sorted = append(sorted, kv{k, v})
+	}
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].Value > sorted[j].Value
+	})
+
+	result := make([]types.StatItem, 0, limit)
+	for i, item := range sorted {
+		if i >= limit {
+			break
+		}
+		result = append(result, types.StatItem{Name: strconv.Itoa(item.Key), Count: item.Value})
+	}
+	return result
+}
+
+// sortIconHashMap 将 IconHash map 转换为排序后的列表
+func sortIconHashMap(m map[string]*types.IconHashStatItem, limit int) []types.IconHashStatItem {
+	var sorted []*types.IconHashStatItem
+	for _, v := range m {
+		sorted = append(sorted, v)
+	}
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].Count > sorted[j].Count
+	})
+
+	result := make([]types.IconHashStatItem, 0, limit)
+	for i, item := range sorted {
+		if i >= limit {
+			break
+		}
+		result = append(result, *item)
+	}
+	return result
+}
+
+// parseQuerySyntax 解析查询语法
+// 支持格式: port=80 && service=http || title="test"
+// 如果查询不包含 = 语法，则作为模糊搜索匹配 host/title/domain/service/authority
+func parseQuerySyntax(query string, filter bson.M) {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return
+	}
+
+	// 如果不包含 = 号，则视为普通文本模糊搜索
+	if !strings.Contains(query, "=") {
+		filter["$or"] = []bson.M{
+			{"host": bson.M{"$regex": query, "$options": "i"}},
+			{"authority": bson.M{"$regex": query, "$options": "i"}},
+			{"title": bson.M{"$regex": query, "$options": "i"}},
+			{"domain": bson.M{"$regex": query, "$options": "i"}},
+			{"service": bson.M{"$regex": query, "$options": "i"}},
+		}
+		return
+	}
+
+	// 简单解析：支持 field=value 格式，多个条件用 && 连接
+	// 例如: port=80 && service=http && title=test
+	conditions := strings.Split(query, "&&")
+	for _, cond := range conditions {
+		cond = strings.TrimSpace(cond)
+		if cond == "" {
+			continue
+		}
+
+		// 解析 field=value 或 field="value"
+		parts := strings.SplitN(cond, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+
+		field := strings.TrimSpace(parts[0])
+		value := strings.TrimSpace(parts[1])
+		// 去除引号
+		value = strings.Trim(value, "\"'")
+
+		// 映射字段名
+		switch strings.ToLower(field) {
+		case "port":
+			if port, err := strconv.Atoi(value); err == nil {
+				filter["port"] = port
+			}
+		case "host", "ip":
+			filter["host"] = bson.M{"$regex": value, "$options": "i"}
+		case "service", "protocol":
+			filter["service"] = bson.M{"$regex": value, "$options": "i"}
+		case "title":
+			filter["title"] = bson.M{"$regex": value, "$options": "i"}
+		case "app", "finger", "fingerprint":
+			filter["app"] = bson.M{"$regex": cleanAppName(value), "$options": "i"}
+		case "status", "httpstatus":
+			filter["status"] = value
+		case "domain":
+			filter["domain"] = bson.M{"$regex": value, "$options": "i"}
+		case "banner":
+			filter["banner"] = bson.M{"$regex": value, "$options": "i"}
+		}
+	}
+}
+
+type AssetListLogic struct {
+	logx.Logger
+	ctx    context.Context
+	svcCtx *svc.ServiceContext
+}
+
+func NewAssetListLogic(ctx context.Context, svcCtx *svc.ServiceContext) *AssetListLogic {
+	return &AssetListLogic{
+		Logger: logx.WithContext(ctx),
+		ctx:    ctx,
+		svcCtx: svcCtx,
+	}
+}
+
+func (l *AssetListLogic) AssetList(req *types.AssetListReq, workspaceId string) (resp *types.AssetListResp, err error) {
+	// 添加调试日志
+	l.Logger.Infof("AssetList查询: workspaceId=%s, page=%d, pageSize=%d", workspaceId, req.Page, req.PageSize)
+
+	// 构建查询条件
+	filter := bson.M{}
+
+	// 如果有语法查询，解析语法
+	if req.Query != "" {
+		parseQuerySyntax(req.Query, filter)
+	}
+
+	// 独立筛选条件：无论是否有 query 都生效，且不覆盖 parseQuerySyntax 已设置的字段
+	if req.Host != "" {
+		if _, exists := filter["host"]; !exists {
+			filter["host"] = bson.M{"$regex": req.Host, "$options": "i"}
+		}
+	}
+	if req.Port > 0 {
+		if _, exists := filter["port"]; !exists {
+			filter["port"] = req.Port
+		}
+	} else {
+		// 端口为空(port=0)的资产不应该出现在端口列表中
+		if _, exists := filter["port"]; !exists {
+			filter["port"] = bson.M{"$gt": 0}
+		}
+	}
+	if req.Service != "" {
+		if _, exists := filter["service"]; !exists {
+			filter["service"] = bson.M{"$regex": req.Service, "$options": "i"}
+		}
+	}
+	if req.Title != "" {
+		if _, exists := filter["title"]; !exists {
+			filter["title"] = bson.M{"$regex": req.Title, "$options": "i"}
+		}
+	}
+	if req.App != "" {
+		if _, exists := filter["app"]; !exists {
+			cleanedApp := cleanAppName(req.App)
+			filter["app"] = bson.M{"$regex": cleanedApp, "$options": "i"}
+		}
+	}
+	if req.HttpStatus != "" {
+		if _, exists := filter["status"]; !exists {
+			filter["status"] = req.HttpStatus
+		}
+	}
+	if req.IconHash != "" {
+		if _, exists := filter["icon_hash"]; !exists {
+			filter["icon_hash"] = req.IconHash
+		}
+	}
+
+	// 只看新资产
+	if req.OnlyNew {
+		filter["new"] = true
+	}
+	// 只看有更新
+	if req.OnlyUpdated {
+		filter["update"] = true
+	}
+	// 时间范围筛选：最近N天内更新的资产
+	if req.UpdatedWithinDays > 0 {
+		cutoffTime := time.Now().AddDate(0, 0, -req.UpdatedWithinDays)
+		filter["last_status_change_time"] = bson.M{"$gte": cutoffTime}
+		// 同时要求是已更新状态
+		filter["update"] = true
+	}
+	// 排除CDN/Cloud资产
+	if req.ExcludeCdn {
+		filter["cdn"] = bson.M{"$ne": true}
+		filter["cloud"] = bson.M{"$ne": true}
+	}
+	// 按组织筛选
+	if req.OrgId != "" {
+		filter["org_id"] = req.OrgId
+	}
+
+	var total int64
+	var assets []model.Asset
+
+	// 获取需要查询的工作空间列表
+	wsIds := common.GetWorkspaceIds(l.ctx, l.svcCtx, workspaceId)
+	l.Logger.Infof("AssetList查询工作空间列表: %v", wsIds)
+
+	// 如果查询多个工作空间
+	if len(wsIds) > 1 || workspaceId == "" || workspaceId == "all" {
+		// 优化：限制每个工作空间的查询数量，避免内存溢出
+		maxPerWorkspace := req.PageSize * 3 // 每个工作空间最多查询3页的数据
+		var allAssets []model.Asset
+
+		for _, wsId := range wsIds {
+			assetModel := l.svcCtx.GetAssetModel(wsId)
+
+			// 先检查该工作空间是否有数据
+			wsTotal, err := assetModel.Count(l.ctx, filter)
+			if err != nil || wsTotal == 0 {
+				continue // 跳过没有数据的工作空间
+			}
+			total += wsTotal
+
+			// 限制查询数量，避免内存问题
+			limit := maxPerWorkspace
+			if wsTotal < int64(limit) {
+				limit = int(wsTotal)
+			}
+
+			// 按时间排序查询
+			sortField := "update_time"
+			if !req.SortByUpdate {
+				sortField = "create_time"
+			}
+
+			wsAssets, err := assetModel.FindWithSort(l.ctx, filter, 1, limit, sortField)
+			if err != nil {
+				l.Logger.Errorf("查询工作空间 %s 资产失败: %v", wsId, err)
+				continue
+			}
+			allAssets = append(allAssets, wsAssets...)
+		}
+
+		// 如果没有找到任何资产
+		if len(allAssets) == 0 {
+			return &types.AssetListResp{
+				Code:  0,
+				Msg:   "success",
+				Total: 0,
+				List:  []types.Asset{},
+			}, nil
+		}
+
+		// 按时间排序所有资产
+		sortAssetsByTime(allAssets, req.SortByUpdate)
+
+		// 分页
+		start := (req.Page - 1) * req.PageSize
+		end := start + req.PageSize
+		if start > len(allAssets) {
+			assets = []model.Asset{}
+		} else {
+			if end > len(allAssets) {
+				end = len(allAssets)
+			}
+			assets = allAssets[start:end]
+		}
+	} else {
+		// 查询指定工作空间
+		assetModel := l.svcCtx.GetAssetModel(workspaceId)
+
+		total, err = assetModel.Count(l.ctx, filter)
+		if err != nil {
+			return &types.AssetListResp{Code: 500, Msg: "查询失败"}, nil
+		}
+
+		// 查询列表 - 支持按风险评分排序
+		if req.SortByRisk {
+			assets, err = assetModel.FindByRiskScore(l.ctx, filter, req.Page, req.PageSize, false)
+		} else {
+			sortField := "update_time"
+			if !req.SortByUpdate {
+				sortField = "create_time"
+			}
+			assets, err = assetModel.FindWithSort(l.ctx, filter, req.Page, req.PageSize, sortField)
+		}
+		if err != nil {
+			return &types.AssetListResp{Code: 500, Msg: "查询失败"}, nil
+		}
+	}
+
+	// 构建组织ID到名称的映射
+	orgNameMap := make(map[string]string)
+	if orgs, err := l.svcCtx.OrganizationModel.Find(l.ctx, bson.M{}, 0, 0); err == nil {
+		for _, org := range orgs {
+			orgNameMap[org.Id.Hex()] = org.Name
+		}
+	}
+
+	// 转换响应
+	list := make([]types.Asset, 0, len(assets))
+	for _, a := range assets {
+		// 获取归属地信息
+		location := ""
+		if len(a.Ip.IpV4) > 0 && a.Ip.IpV4[0].Location != "" {
+			location = a.Ip.IpV4[0].Location
+		}
+
+		// 构建IP信息
+		var ipInfo *types.IPInfo
+		if len(a.Ip.IpV4) > 0 || len(a.Ip.IpV6) > 0 {
+			ipInfo = &types.IPInfo{}
+			for _, ipv4 := range a.Ip.IpV4 {
+				ipInfo.IPV4 = append(ipInfo.IPV4, types.IPV4Info{
+					IP:       ipv4.IPName,
+					Location: ipv4.Location,
+				})
+			}
+			for _, ipv6 := range a.Ip.IpV6 {
+				ipInfo.IPV6 = append(ipInfo.IPV6, types.IPV6Info{
+					IP:       ipv6.IPName,
+					Location: ipv6.Location,
+				})
+			}
+		}
+
+		// 获取组织名称
+		orgName := ""
+		if a.OrgId != "" {
+			if name, ok := orgNameMap[a.OrgId]; ok {
+				orgName = name
+			}
+			l.Logger.Infof("Asset %s:%d has orgId=%s, orgName=%s", a.Host, a.Port, a.OrgId, orgName)
+		} else {
+			l.Logger.Infof("Asset %s:%d has NO orgId", a.Host, a.Port)
+		}
+
+		// 将 IconHashBytes 转换为 base64（仅当是有效图片数据时）
+		iconData := ""
+		if len(a.IconHashBytes) > 0 && isValidImageBytes(a.IconHashBytes) {
+			iconData = base64.StdEncoding.EncodeToString(a.IconHashBytes)
+		}
+
+		list = append(list, types.Asset{
+			Id:                   a.Id.Hex(),
+			Authority:            a.Authority,
+			Host:                 a.Host,
+			Port:                 a.Port,
+			Category:             a.Category,
+			Service:              a.Service,
+			Title:                a.Title,
+			App:                  a.App,
+			HttpStatus:           a.HttpStatus,
+			HttpHeader:           a.HttpHeader,
+			HttpBody:             a.HttpBody,
+			Banner:               a.Banner,
+			IconHash:             a.IconHash,
+			IconData:             iconData,
+			Screenshot:           a.Screenshot,
+			Location:             location,
+			IP:                   ipInfo,
+			IsCDN:                a.IsCDN,
+			IsCloud:              a.IsCloud,
+			IsNew:                a.IsNewAsset,
+			IsUpdated:            a.IsUpdated,
+			CreateTime:           a.CreateTime.Local().Format("2006-01-02 15:04:05"),
+			UpdateTime:           a.UpdateTime.Local().Format("2006-01-02 15:04:05"),
+			LastStatusChangeTime: formatTimeIfNotZero(a.LastStatusChangeTime),
+			FirstSeenTaskId:      a.FirstSeenTaskId,
+			// 组织信息
+			OrgId:   a.OrgId,
+			OrgName: orgName,
+			// 新增字段 - 风险评分
+			RiskScore: a.RiskScore,
+			RiskLevel: a.RiskLevel,
+		})
+	}
+
+	return &types.AssetListResp{
+		Code:  0,
+		Msg:   "success",
+		Total: int(total),
+		List:  list,
+	}, nil
+}
+
+type AssetStatLogic struct {
+	logx.Logger
+	ctx    context.Context
+	svcCtx *svc.ServiceContext
+}
+
+func NewAssetStatLogic(ctx context.Context, svcCtx *svc.ServiceContext) *AssetStatLogic {
+	return &AssetStatLogic{
+		Logger: logx.WithContext(ctx),
+		ctx:    ctx,
+		svcCtx: svcCtx,
+	}
+}
+
+func (l *AssetStatLogic) AssetStat(workspaceId string) (resp *types.AssetStatResp, err error) {
+	var totalAsset, totalHost, newCount, updatedCount int64
+	var topPorts, topService, topApp, topTitle []types.StatItem
+	var topIconHash []types.IconHashStatItem
+	var riskDistribution map[string]int
+
+	// 获取需要查询的工作空间列表
+	wsIds := common.GetWorkspaceIds(l.ctx, l.svcCtx, workspaceId)
+
+	// 如果查询多个工作空间
+	if len(wsIds) > 1 || workspaceId == "" || workspaceId == "all" {
+		portMap := make(map[int]int)
+		serviceMap := make(map[string]int)
+		appMap := make(map[string]int)
+		titleMap := make(map[string]int)
+		iconHashMap := make(map[string]*types.IconHashStatItem)
+		riskMap := make(map[string]int)
+
+		for _, wsId := range wsIds {
+			assetModel := l.svcCtx.GetAssetModel(wsId)
+
+			// 概览统计（总数/新资产/更新资产）
+			overview, statErr := assetModel.AggregateOverviewStats(l.ctx)
+			if statErr != nil || overview.TotalAsset == 0 {
+				l.Logger.Infof("跳过空工作空间: %s", wsId)
+				continue
+			}
+
+			totalAsset += overview.TotalAsset
+			totalHost += overview.TotalAsset
+			newCount += overview.NewCount
+			updatedCount += overview.UpdatedCount
+
+			// 聚合端口
+			portStats, _ := assetModel.AggregatePort(l.ctx, 20)
+			for _, s := range portStats {
+				portMap[s.Port] += s.Count
+			}
+
+			// 聚合服务
+			serviceStats, _ := assetModel.Aggregate(l.ctx, "service", 20)
+			for _, s := range serviceStats {
+				serviceMap[s.Field] += s.Count
+			}
+
+			// 聚合应用（使用专门的AggregateApp方法展开数组）
+			appStats, _ := assetModel.AggregateApp(l.ctx, 20)
+			for _, s := range appStats {
+				appMap[s.Field] += s.Count
+			}
+
+			// 聚合标题
+			titleStats, _ := assetModel.Aggregate(l.ctx, "title", 20)
+			for _, s := range titleStats {
+				if s.Field != "" {
+					titleMap[s.Field] += s.Count
+				}
+			}
+
+			// 聚合 IconHash
+			iconHashStats, _ := assetModel.AggregateIconHash(l.ctx, 20)
+			for _, s := range iconHashStats {
+				if existing, ok := iconHashMap[s.IconHash]; ok {
+					existing.Count += s.Count
+				} else {
+					iconData := ""
+					if len(s.IconData) > 0 && isValidImageBytes(s.IconData) {
+						iconData = base64.StdEncoding.EncodeToString(s.IconData)
+					}
+					iconHashMap[s.IconHash] = &types.IconHashStatItem{
+						IconHash:      s.IconHash,
+						IconData:      iconData,
+						IconHashBytes: iconData,
+						Count:         s.Count,
+					}
+				}
+			}
+
+			// 聚合风险等级
+			wsRisk, _ := assetModel.AggregateRiskLevel(l.ctx)
+			for k, v := range wsRisk {
+				riskMap[k] += v
+			}
+		}
+
+		// 转换为排序后的列表
+		topPorts = sortMapToStatItemsInt(portMap, 10)
+		topService = sortMapToStatItems(serviceMap, 10)
+		topApp = sortMapToStatItems(appMap, 10)
+		topTitle = sortMapToStatItems(titleMap, 10)
+		topIconHash = sortIconHashMap(iconHashMap, 10)
+		riskDistribution = riskMap
+	} else {
+		assetModel := l.svcCtx.GetAssetModel(workspaceId)
+
+		// 概览统计（总数/新资产/更新资产）
+		overview, _ := assetModel.AggregateOverviewStats(l.ctx)
+		if overview != nil {
+			totalAsset = overview.TotalAsset
+			totalHost = overview.TotalAsset
+			newCount = overview.NewCount
+			updatedCount = overview.UpdatedCount
+		}
+
+		// Top端口
+		portStats, _ := assetModel.AggregatePort(l.ctx, 10)
+		topPorts = make([]types.StatItem, 0, len(portStats))
+		for _, s := range portStats {
+			topPorts = append(topPorts, types.StatItem{
+				Name:  strconv.Itoa(s.Port),
+				Count: s.Count,
+			})
+		}
+
+		// Top服务
+		serviceStats, _ := assetModel.Aggregate(l.ctx, "service", 10)
+		topService = make([]types.StatItem, 0, len(serviceStats))
+		for _, s := range serviceStats {
+			topService = append(topService, types.StatItem{
+				Name:  s.Field,
+				Count: s.Count,
+			})
+		}
+
+		// Top应用（使用专门的AggregateApp方法展开数组）
+		appStats, _ := assetModel.AggregateApp(l.ctx, 10)
+		topApp = make([]types.StatItem, 0, len(appStats))
+		for _, s := range appStats {
+			topApp = append(topApp, types.StatItem{
+				Name:  s.Field,
+				Count: s.Count,
+			})
+		}
+
+		// Top标题
+		titleStats, _ := assetModel.Aggregate(l.ctx, "title", 10)
+		topTitle = make([]types.StatItem, 0, len(titleStats))
+		for _, s := range titleStats {
+			if s.Field != "" {
+				topTitle = append(topTitle, types.StatItem{
+					Name:  s.Field,
+					Count: s.Count,
+				})
+			}
+		}
+
+		// Top IconHash
+		iconHashStats, _ := assetModel.AggregateIconHash(l.ctx, 10)
+		topIconHash = make([]types.IconHashStatItem, 0, len(iconHashStats))
+		for _, s := range iconHashStats {
+			iconData := ""
+			if len(s.IconData) > 0 && isValidImageBytes(s.IconData) {
+				iconData = base64.StdEncoding.EncodeToString(s.IconData)
+			}
+			topIconHash = append(topIconHash, types.IconHashStatItem{
+				IconHash:      s.IconHash,
+				IconData:      iconData,
+				IconHashBytes: iconData,
+				Count:         s.Count,
+			})
+		}
+
+		// 风险等级分布
+		riskDistribution, _ = assetModel.AggregateRiskLevel(l.ctx)
+	}
+
+	return &types.AssetStatResp{
+		Code:             0,
+		Msg:              "success",
+		TotalAsset:       int(totalAsset),
+		TotalHost:        int(totalHost),
+		NewCount:         int(newCount),
+		UpdatedCount:     int(updatedCount),
+		TopPorts:         topPorts,
+		TopService:       topService,
+		TopApp:           topApp,
+		TopTitle:         topTitle,
+		TopIconHash:      topIconHash,
+		RiskDistribution: riskDistribution,
+	}, nil
+}
+
+// AssetDeleteLogic 单个删除
+type AssetDeleteLogic struct {
+	logx.Logger
+	ctx    context.Context
+	svcCtx *svc.ServiceContext
+}
+
+func NewAssetDeleteLogic(ctx context.Context, svcCtx *svc.ServiceContext) *AssetDeleteLogic {
+	return &AssetDeleteLogic{
+		Logger: logx.WithContext(ctx),
+		ctx:    ctx,
+		svcCtx: svcCtx,
+	}
+}
+
+func (l *AssetDeleteLogic) AssetDelete(req *types.AssetDeleteReq, workspaceId string) (resp *types.BaseResp, err error) {
+	// 优先使用请求中的 workspaceId，如果没有则使用从上下文获取的
+	wsId := req.WorkspaceId
+	if wsId == "" {
+		wsId = workspaceId
+	}
+
+	assetModel := l.svcCtx.GetAssetModel(wsId)
+	err = assetModel.Delete(l.ctx, req.Id)
+	if err != nil {
+		return &types.BaseResp{Code: 500, Msg: "删除失败"}, nil
+	}
+	return &types.BaseResp{Code: 0, Msg: "删除成功"}, nil
+}
+
+// AssetBatchDeleteLogic 批量删除
+type AssetBatchDeleteLogic struct {
+	logx.Logger
+	ctx    context.Context
+	svcCtx *svc.ServiceContext
+}
+
+func NewAssetBatchDeleteLogic(ctx context.Context, svcCtx *svc.ServiceContext) *AssetBatchDeleteLogic {
+	return &AssetBatchDeleteLogic{
+		Logger: logx.WithContext(ctx),
+		ctx:    ctx,
+		svcCtx: svcCtx,
+	}
+}
+
+func (l *AssetBatchDeleteLogic) AssetBatchDelete(req *types.AssetBatchDeleteReq, workspaceId string) (resp *types.BaseResp, err error) {
+	if len(req.Ids) == 0 {
+		return &types.BaseResp{Code: 400, Msg: "请选择要删除的资产"}, nil
+	}
+
+	assetModel := l.svcCtx.GetAssetModel(workspaceId)
+	deleted, err := assetModel.BatchDelete(l.ctx, req.Ids)
+	if err != nil {
+		return &types.BaseResp{Code: 500, Msg: "删除失败"}, nil
+	}
+	return &types.BaseResp{Code: 0, Msg: "成功删除 " + strconv.FormatInt(deleted, 10) + " 条资产"}, nil
+}
+
+// AssetClearLogic 清空资产
+type AssetClearLogic struct {
+	logx.Logger
+	ctx    context.Context
+	svcCtx *svc.ServiceContext
+}
+
+func NewAssetClearLogic(ctx context.Context, svcCtx *svc.ServiceContext) *AssetClearLogic {
+	return &AssetClearLogic{
+		Logger: logx.WithContext(ctx),
+		ctx:    ctx,
+		svcCtx: svcCtx,
+	}
+}
+
+func (l *AssetClearLogic) AssetClear(workspaceId string) (resp *types.BaseResp, err error) {
+	var totalDeleted int64
+
+	// 获取需要清空的工作空间列表
+	wsIds := common.GetWorkspaceIds(l.ctx, l.svcCtx, workspaceId)
+
+	// 清空所有相关工作空间的资产
+	for _, wsId := range wsIds {
+		assetModel := l.svcCtx.GetAssetModel(wsId)
+		deleted, err := assetModel.Clear(l.ctx)
+		if err != nil {
+			l.Logger.Errorf("清空工作空间 %s 资产失败: %v", wsId, err)
+			continue
+		}
+		totalDeleted += deleted
+
+		// 清空对应的资产历史表
+		historyModel := l.svcCtx.GetAssetHistoryModel(wsId)
+		historyModel.Clear(l.ctx)
+	}
+
+	// 清理可能残留的 all_asset 集合（早期 bug 误写入数据到此集合）
+	if workspaceId == "" || workspaceId == "all" {
+		allAssetModel := l.svcCtx.GetAssetModel("all")
+		if deleted, err := allAssetModel.Clear(l.ctx); err == nil && deleted > 0 {
+			l.Logger.Infof("清理残留 all_asset 集合: %d 条", deleted)
+			totalDeleted += deleted
+		}
+	}
+
+	return &types.BaseResp{Code: 0, Msg: "成功清空 " + strconv.FormatInt(totalDeleted, 10) + " 条资产"}, nil
+}
+
+// AssetHistoryLogic 资产历史记录
+type AssetHistoryLogic struct {
+	logx.Logger
+	ctx    context.Context
+	svcCtx *svc.ServiceContext
+}
+
+func NewAssetHistoryLogic(ctx context.Context, svcCtx *svc.ServiceContext) *AssetHistoryLogic {
+	return &AssetHistoryLogic{
+		Logger: logx.WithContext(ctx),
+		ctx:    ctx,
+		svcCtx: svcCtx,
+	}
+}
+
+func (l *AssetHistoryLogic) AssetHistory(req *types.AssetHistoryReq, workspaceId string) (resp *types.AssetHistoryResp, err error) {
+	historyModel := l.svcCtx.GetAssetHistoryModel(workspaceId)
+
+	limit := req.Limit
+	if limit <= 0 {
+		limit = 20
+	}
+
+	histories, err := historyModel.FindByAssetId(l.ctx, req.AssetId, limit)
+	if err != nil {
+		return &types.AssetHistoryResp{Code: 500, Msg: "查询失败"}, nil
+	}
+
+	list := make([]types.AssetHistoryItem, 0, len(histories))
+	for _, h := range histories {
+		// 转换变更详情
+		var changes []types.FieldChange
+		for _, c := range h.Changes {
+			changes = append(changes, types.FieldChange{
+				Field:    c.Field,
+				OldValue: c.OldValue,
+				NewValue: c.NewValue,
+			})
+		}
+
+		list = append(list, types.AssetHistoryItem{
+			Id:         h.Id.Hex(),
+			Authority:  h.Authority,
+			Host:       h.Host,
+			Port:       h.Port,
+			Service:    h.Service,
+			Title:      h.Title,
+			App:        h.App,
+			HttpStatus: h.HttpStatus,
+			HttpHeader: h.HttpHeader,
+			HttpBody:   h.HttpBody,
+			Banner:     h.Banner,
+			IconHash:   h.IconHash,
+			Screenshot: h.Screenshot,
+			TaskId:     h.TaskId,
+			CreateTime: h.CreateTime.Local().Format("2006-01-02 15:04:05"),
+			Changes:    changes,
+		})
+	}
+
+	return &types.AssetHistoryResp{
+		Code: 0,
+		Msg:  "success",
+		List: list,
+	}, nil
+}
+
+// AssetImportLogic 导入资产
+type AssetImportLogic struct {
+	logx.Logger
+	ctx    context.Context
+	svcCtx *svc.ServiceContext
+}
+
+func NewAssetImportLogic(ctx context.Context, svcCtx *svc.ServiceContext) *AssetImportLogic {
+	return &AssetImportLogic{
+		Logger: logx.WithContext(ctx),
+		ctx:    ctx,
+		svcCtx: svcCtx,
+	}
+}
+
+func (l *AssetImportLogic) AssetImport(req *types.AssetImportReq, workspaceId string) (resp *types.AssetImportResp, err error) {
+	if len(req.Targets) == 0 {
+		return &types.AssetImportResp{Code: 400, Msg: "请输入要导入的目标"}, nil
+	}
+
+	assetModel := l.svcCtx.GetAssetModel(workspaceId)
+
+	var newCount, skipCount, errorCount int
+	var errorDetails []string
+	total := 0
+
+	for _, target := range req.Targets {
+		target = strings.TrimSpace(target)
+		if target == "" {
+			continue
+		}
+		total++
+
+		host, port, scheme, err := parseTarget(target)
+		if err != nil {
+			errorCount++
+			errorDetails = append(errorDetails, fmt.Sprintf("%s: %s", target, err.Error()))
+			continue
+		}
+
+		// 检查是否已存在
+		existing, _ := assetModel.FindByHostPort(l.ctx, host, port)
+		if existing != nil {
+			skipCount++
+			continue
+		}
+
+		// 创建新资产
+		authority := host + ":" + strconv.Itoa(port)
+		asset := &model.Asset{
+			Authority: authority,
+			Host:      host,
+			Port:      port,
+			Service:   scheme,
+			IsHTTP:    scheme == "http" || scheme == "https",
+			Source:    "import",
+		}
+
+		if err := assetModel.Insert(l.ctx, asset); err != nil {
+			errorCount++
+			errorDetails = append(errorDetails, fmt.Sprintf("%s: 保存失败", target))
+			continue
+		}
+		newCount++
+	}
+
+	if total == 0 {
+		return &types.AssetImportResp{Code: 400, Msg: "没有有效的目标"}, nil
+	}
+
+	msg := "导入完成"
+	if newCount > 0 {
+		msg += fmt.Sprintf("，新增 %d 条", newCount)
+	}
+	if skipCount > 0 {
+		msg += fmt.Sprintf("，跳过 %d 条（已存在）", skipCount)
+	}
+	if errorCount > 0 {
+		msg += fmt.Sprintf("，失败 %d 条（格式错误）", errorCount)
+		// 最多显示前3个错误详情
+		if len(errorDetails) > 0 {
+			maxShow := 3
+			if len(errorDetails) < maxShow {
+				maxShow = len(errorDetails)
+			}
+			msg += "：" + strings.Join(errorDetails[:maxShow], "；")
+			if len(errorDetails) > maxShow {
+				msg += fmt.Sprintf("...等%d条", len(errorDetails))
+			}
+		}
+	}
+
+	return &types.AssetImportResp{
+		Code:       0,
+		Msg:        msg,
+		Total:      total,
+		NewCount:   newCount,
+		SkipCount:  skipCount,
+		ErrorCount: errorCount,
+	}, nil
+}
+
+// parseTarget 解析目标字符串，支持 IP:端口、URL、域名 格式
+func parseTarget(target string) (host string, port int, scheme string, err error) {
+	target = strings.TrimSpace(target)
+
+	if target == "" {
+		return "", 0, "", fmt.Errorf("目标不能为空")
+	}
+
+	// 处理 URL 格式
+	if strings.HasPrefix(target, "http://") || strings.HasPrefix(target, "https://") {
+		// 解析 URL
+		if strings.HasPrefix(target, "https://") {
+			scheme = "https"
+			target = strings.TrimPrefix(target, "https://")
+		} else {
+			scheme = "http"
+			target = strings.TrimPrefix(target, "http://")
+		}
+
+		// 去掉路径部分
+		if idx := strings.Index(target, "/"); idx > 0 {
+			target = target[:idx]
+		}
+
+		// 去掉查询参数
+		if idx := strings.Index(target, "?"); idx > 0 {
+			target = target[:idx]
+		}
+
+		if target == "" {
+			return "", 0, "", fmt.Errorf("URL格式错误：缺少主机名")
+		}
+
+		// 解析 host:port
+		if strings.Contains(target, ":") {
+			parts := strings.SplitN(target, ":", 2)
+			host = parts[0]
+			if host == "" {
+				return "", 0, "", fmt.Errorf("URL格式错误：主机名为空")
+			}
+			port, err = strconv.Atoi(parts[1])
+			if err != nil {
+				return "", 0, "", fmt.Errorf("端口格式错误：%s", parts[1])
+			}
+		} else {
+			host = target
+			if scheme == "https" {
+				port = 443
+			} else {
+				port = 80
+			}
+		}
+	} else if strings.Contains(target, ":") {
+		// IP:端口 或 域名:端口 格式
+		parts := strings.SplitN(target, ":", 2)
+		host = parts[0]
+		if host == "" {
+			return "", 0, "", fmt.Errorf("格式错误：主机名为空")
+		}
+		port, err = strconv.Atoi(parts[1])
+		if err != nil {
+			return "", 0, "", fmt.Errorf("端口格式错误：%s", parts[1])
+		}
+		// 根据端口推断协议
+		if port == 443 || port == 8443 {
+			scheme = "https"
+		} else {
+			scheme = "http"
+		}
+	} else {
+		// 只有 host（IP或域名），默认 80 端口
+		host = target
+		port = 80
+		scheme = "http"
+	}
+
+	// 校验端口范围
+	if port <= 0 || port > 65535 {
+		return "", 0, "", fmt.Errorf("端口超出范围(1-65535)：%d", port)
+	}
+
+	// 校验主机名格式（IP或域名）
+	if !isValidHost(host) {
+		return "", 0, "", fmt.Errorf("无效的主机名或IP：%s", host)
+	}
+
+	return host, port, scheme, nil
+}
+
+// isValidHost 校验主机名是否为有效的IP或域名
+func isValidHost(host string) bool {
+	if host == "" {
+		return false
+	}
+
+	// 检查是否为有效IP
+	if net.ParseIP(host) != nil {
+		return true
+	}
+
+	// 检查是否为有效域名
+	// 域名规则：由字母、数字、连字符组成，点分隔，每段不超过63字符
+	if len(host) > 253 {
+		return false
+	}
+
+	// 简单的域名格式校验
+	domainRegex := regexp.MustCompile(`^([a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)*[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?$`)
+	return domainRegex.MatchString(host)
+}

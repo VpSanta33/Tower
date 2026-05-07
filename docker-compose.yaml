@@ -1,0 +1,125 @@
+services:
+  # Redis 
+  redis:
+    image: registry.cn-hangzhou.aliyuncs.com/txf7/redis:7-alpine
+    container_name: tower_redis
+    command: redis-server --appendonly yes
+    volumes:
+      - tower_redis_data:/data
+    environment:
+      - TZ=Asia/Shanghai
+    restart: unless-stopped
+    networks:
+      - tower_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # MongoDB 
+  mongodb:
+    image: registry.cn-hangzhou.aliyuncs.com/txf7/mongo:6
+    container_name: tower_mongodb
+    volumes:
+      - tower_mongodb_data:/data/db
+      - ./docker/mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+    environment:
+      - TZ=Asia/Shanghai
+    restart: unless-stopped
+    networks:
+      - tower_network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Tower API 服务
+  tower-api:
+    image: registry.cn-hangzhou.aliyuncs.com/txf7/tower-api:latest
+    container_name: tower_api
+    environment:
+      - TZ=Asia/Shanghai
+      - GOMAXPROCS=4
+      - TOWER_JWT_SECRET=${TOWER_JWT_SECRET}
+    volumes:
+      - tower_api_data:/app/data
+    ports:
+      - "8888:8888"
+    depends_on:
+      redis:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - tower_network
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    healthcheck:
+      test: ["CMD", "sh", "-c", "wget --quiet --tries=1 --spider http://localhost:8888/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Tower RPC 服务
+  tower-rpc:
+    image: registry.cn-hangzhou.aliyuncs.com/txf7/tower-rpc:latest
+    container_name: tower_rpc
+    environment:
+      - TZ=Asia/Shanghai
+      - GOMAXPROCS=4
+    depends_on:
+      redis:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - tower_network
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  # Tower Web
+  tower-web:
+    image: registry.cn-hangzhou.aliyuncs.com/txf7/tower-web:latest
+    container_name: tower_web
+    environment:
+      - TZ=Asia/Shanghai
+    ports:
+      - "3333:443"
+    volumes:
+      - tower_ssl_certs:/etc/nginx/ssl
+    depends_on:
+      - tower-api
+    restart: unless-stopped
+    networks:
+      - tower_network
+
+volumes:
+  tower_redis_data:
+    driver: local
+  tower_mongodb_data:
+    driver: local
+  tower_ssl_certs:
+    driver: local
+  tower_api_data:
+    driver: local
+
+networks:
+  tower_network:
+    driver: bridge

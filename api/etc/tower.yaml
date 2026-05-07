@@ -1,0 +1,32 @@
+Name: tower-api
+Host: 0.0.0.0
+Port: 8888
+MaxBytes: 104857600  # 100MB
+Timeout: 300000      # 5分钟超时 (毫秒)
+
+Log:
+  Level: info
+  Stat: false
+  Mode: console
+  Encoding: plain
+  TimeFormat: "15:04:05"
+  
+Auth:
+  # JWT Secret: 优先从环境变量 TOWER_JWT_SECRET 读取
+  # 如未设置，将自动生成随机 secret（仅适用于开发环境）
+  AccessSecret: ""
+  AccessExpire: 86400
+
+Mongo:
+  Uri: "${TOWER_MONGO_URI}"
+  DbName: "tower"
+
+Redis:
+  Host: "${TOWER_REDIS_HOST}"
+  Pass: "${TOWER_REDIS_PASS}"
+  Type: node
+
+TaskRpc:
+  Endpoints:
+    - 127.0.0.1:9000
+  Timeout: 30000
