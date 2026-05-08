@@ -11,7 +11,7 @@
 
 services:
   tower-worker:
-    image: registry.cn-hangzhou.aliyuncs.com/txf7/tower-worker:latest
+    image: ghcr.io/vpsanta33/tower-worker:latest
     container_name: tower-worker
     restart: unless-stopped
     network_mode: host

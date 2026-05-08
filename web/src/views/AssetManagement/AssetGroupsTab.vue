@@ -175,7 +175,7 @@ const useMockData = false
 const mockGroups = [
   {
     id: '1',
-    domain: 'txf7.cn',
+    domain: 'santaa.ai',
     source: 'Auto Discovery',
     status: 'finished',
     totalServices: 4,

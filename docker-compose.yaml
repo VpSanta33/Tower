@@ -1,7 +1,7 @@
 services:
   # Redis 
   redis:
-    image: registry.cn-hangzhou.aliyuncs.com/txf7/redis:7-alpine
+    image: redis:7-alpine
     container_name: tower_redis
     command: redis-server --appendonly yes
     volumes:
@@ -19,7 +19,7 @@ services:
 
   # MongoDB 
   mongodb:
-    image: registry.cn-hangzhou.aliyuncs.com/txf7/mongo:6
+    image: mongo:6
     container_name: tower_mongodb
     volumes:
       - tower_mongodb_data:/data/db
@@ -37,7 +37,7 @@ services:
 
   # Tower API 服务
   tower-api:
-    image: registry.cn-hangzhou.aliyuncs.com/txf7/tower-api:latest
+    image: ghcr.io/vpsanta33/tower-api:latest
     container_name: tower_api
     environment:
       - TZ=Asia/Shanghai
@@ -72,7 +72,7 @@ services:
 
   # Tower RPC 服务
   tower-rpc:
-    image: registry.cn-hangzhou.aliyuncs.com/txf7/tower-rpc:latest
+    image: ghcr.io/vpsanta33/tower-rpc:latest
     container_name: tower_rpc
     environment:
       - TZ=Asia/Shanghai
@@ -96,7 +96,7 @@ services:
 
   # Tower Web
   tower-web:
-    image: registry.cn-hangzhou.aliyuncs.com/txf7/tower-web:latest
+    image: ghcr.io/vpsanta33/tower-web:latest
     container_name: tower_web
     environment:
       - TZ=Asia/Shanghai

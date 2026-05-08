@@ -7,7 +7,7 @@ REM Press Ctrl+C to exit at any time
 
 set SCRIPT_VERSION=1.0
 set COMPOSE_FILE=docker-compose.yaml
-set GITHUB_RAW=https://raw.githubusercontent.com/tangxiaofeng7/tower/main
+set GITHUB_RAW=https://raw.githubusercontent.com/VpSanta33/Tower/main
 set LOCAL_VERSION=unknown
 set REMOTE_VERSION=unknown
 
@@ -275,7 +275,7 @@ docker compose up -d tower-api tower-rpc tower-web
 if %errorlevel% neq 0 goto :restart_fail
 
 echo [Tower] Cleaning up old images...
-for /f "tokens=*" %%i in ('docker images --filter "dangling=true" --filter "reference=registry.cn-hangzhou.aliyuncs.com/txf7/tower-*" -q 2^>nul') do docker rmi %%i 2>nul
+for /f "tokens=*" %%i in ('docker images --filter "dangling=true" --filter "reference=ghcr.io/vpsanta33/tower-*" -q 2^>nul') do docker rmi %%i 2>nul
 
 if not "%REMOTE_VERSION%"=="unknown" (
     >VERSION echo %REMOTE_VERSION%
@@ -311,10 +311,10 @@ if /i "!del_data!"=="Y" (
 set /p "del_images=Delete images? (Y/N): "
 if /i "!del_images!"=="Y" (
     echo [Tower] Deleting images...
-    docker rmi registry.cn-hangzhou.aliyuncs.com/txf7/tower-api:latest 2>nul
-    docker rmi registry.cn-hangzhou.aliyuncs.com/txf7/tower-rpc:latest 2>nul
-    docker rmi registry.cn-hangzhou.aliyuncs.com/txf7/tower-web:latest 2>nul
-    docker rmi registry.cn-hangzhou.aliyuncs.com/txf7/tower-worker:latest 2>nul
+    docker rmi ghcr.io/vpsanta33/tower-api:latest 2>nul
+    docker rmi ghcr.io/vpsanta33/tower-rpc:latest 2>nul
+    docker rmi ghcr.io/vpsanta33/tower-web:latest 2>nul
+    docker rmi ghcr.io/vpsanta33/tower-worker:latest 2>nul
 )
 
 echo [Tower] Uninstall complete.

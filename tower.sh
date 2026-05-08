@@ -7,9 +7,9 @@
 SCRIPT_VERSION="1.0"
 COMPOSE_FILE="docker-compose.yaml"
 SERVICES=("tower-api" "tower-rpc" "tower-web")
-GITHUB_REPO="tangxiaofeng7/tower"
+GITHUB_REPO="VpSanta33/Tower"
 GITHUB_RAW="https://raw.githubusercontent.com/${GITHUB_REPO}/main"
-REGISTRY="registry.cn-hangzhou.aliyuncs.com/txf7"
+REGISTRY="ghcr.io/vpsanta33"
 
 # 颜色输出
 info() { echo -e "\033[32m[Tower]\033[0m $*"; }
@@ -417,7 +417,7 @@ upgrade_tower() {
     # 清理旧的 Tower 镜像（只清理 tower 相关的悬空镜像）
     info "正在清理旧的 Tower 镜像..."
     docker images --filter "dangling=true" --format "{{.Repository}}:{{.Tag}} {{.ID}}" 2>/dev/null | \
-        grep -E "registry.cn-hangzhou.aliyuncs.com/txf7/tower-" | \
+        grep -E "ghcr.io/vpsanta33/tower-" | \
         awk '{print $2}' | xargs -r docker rmi 2>/dev/null || true
 
     wait_for_healthy
@@ -456,11 +456,11 @@ uninstall_tower() {
     if confirm "是否删除镜像?"; then
         info "正在删除镜像..."
         for service in "${SERVICES[@]}"; do
-            docker rmi "registry.cn-hangzhou.aliyuncs.com/txf7/${service}:latest" 2>/dev/null
+            docker rmi "ghcr.io/vpsanta33/${service}:latest" 2>/dev/null
         done
-        docker rmi "registry.cn-hangzhou.aliyuncs.com/txf7/tower-worker:latest" 2>/dev/null
-        docker rmi "docker.1ms.run/redis:7-alpine" 2>/dev/null
-        docker rmi "docker.1ms.run/mongo:6" 2>/dev/null
+        docker rmi "ghcr.io/vpsanta33/tower-worker:latest" 2>/dev/null
+        docker rmi "redis:7-alpine" 2>/dev/null
+        docker rmi "mongo:6" 2>/dev/null
     fi
 
     info "Tower 已卸载"
