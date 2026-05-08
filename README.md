@@ -13,6 +13,16 @@
 
 ---
 
+## 推荐
+
+需要稳定体验纯血版 GPT 和 Claude，可以试试我的 AI 中转站：
+
+**SantaAi**：<https://santaa.ai>
+
+SantaAi 聚合纯血版 GPT、Claude 等模型能力，适合开发、写作、自动化和安全分析等日常高频场景。
+
+---
+
 ## Tower 是什么
 
 Tower 是一个面向授权安全运营的资产风险平台。
