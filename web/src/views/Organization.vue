@@ -87,17 +87,26 @@ function showDialog(row = null) {
 }
 
 async function handleSubmit() {
-  await formRef.value.validate()
-  submitting.value = true
   try {
-    const res = await request.post('/organization/save', form)
+    await formRef.value.validate()
+    submitting.value = true
+    const payload = {
+      id: form.id,
+      name: form.name.trim(),
+      description: form.description || ''
+    }
+    const res = await request.post('/organization/save', payload)
     const data = res.data || res
     if (data.code === 0) {
       ElMessage.success(form.id ? t('common.updateSuccess') : t('common.createSuccess'))
       dialogVisible.value = false
       loadData()
     } else {
-      ElMessage.error(data.msg)
+      ElMessage.error(data.msg || t('common.operationFailed'))
+    }
+  } catch (error) {
+    if (error !== false) {
+      ElMessage.error(error?.message || t('common.operationFailed'))
     }
   } finally {
     submitting.value = false
@@ -134,4 +143,3 @@ async function handleStatusChange(row) {
   .action-card { margin-bottom: 20px; }
 }
 </style>
-

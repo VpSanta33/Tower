@@ -713,7 +713,7 @@
         <el-button @click="customPocDialogVisible = false">{{ $t('poc.cancel') }}</el-button>
         <el-button @click="parseYamlContent">{{ $t('poc.reparseYaml') }}</el-button>
         <el-button type="success" @click="handleValidatePocSyntax" :loading="syntaxValidating">{{ $t('poc.validateSyntax') }}</el-button>
-        <el-button type="primary" @click="handleSaveCustomPoc">{{ $t('poc.save') }}</el-button>
+        <el-button type="primary" :loading="customPocSubmitting" @click="handleSaveCustomPoc">{{ $t('poc.save') }}</el-button>
       </template>
     </el-dialog>
 
@@ -1326,6 +1326,7 @@ const tagMappingRules = computed(() => ({
 const customPocs = ref([])
 const customPocLoading = ref(false)
 const customPocDialogVisible = ref(false)
+const customPocSubmitting = ref(false)
 const syntaxValidating = ref(false) // 语法验证中
 
 // 目录扫描字典
@@ -2329,34 +2330,43 @@ async function handleValidatePocSyntax() {
 }
 
 async function handleSaveCustomPoc() {
-  await customPocFormRef.value.validate()
-  // 将逗号分隔的字符串转换为数组
-  const tagsArray = customPocForm.tagsInput
-    .split(/[,，]/) // 支持中英文逗号
-    .map(tag => tag.trim())
-    .filter(tag => tag !== '')
-  
-  const submitData = {
-    id: customPocForm.id,
-    name: customPocForm.name,
-    templateId: customPocForm.templateId,
-    severity: customPocForm.severity,
-    tags: tagsArray,
-    author: customPocForm.author,
-    description: customPocForm.description,
-    content: customPocForm.content,
-    enabled: customPocForm.enabled
-  }
-  
-  const res = await saveCustomPoc(submitData)
-  if (res.code === 0) {
-    ElMessage.success(t('poc.saveSuccess'))
-    customPocDialogVisible.value = false
-    // 保存成功后清除AI生成的缓存
-    aiGeneratedPocCache.value = ''
-    loadCustomPocs()
-  } else {
-    ElMessage.error(res.msg)
+  try {
+    await customPocFormRef.value.validate()
+    customPocSubmitting.value = true
+    // 将逗号分隔的字符串转换为数组
+    const tagsArray = customPocForm.tagsInput
+      .split(/[,，]/) // 支持中英文逗号
+      .map(tag => tag.trim())
+      .filter(tag => tag !== '')
+
+    const submitData = {
+      id: customPocForm.id,
+      name: customPocForm.name.trim(),
+      templateId: customPocForm.templateId.trim(),
+      severity: customPocForm.severity,
+      tags: tagsArray,
+      author: customPocForm.author || '',
+      description: customPocForm.description || '',
+      content: customPocForm.content,
+      enabled: customPocForm.enabled
+    }
+
+    const res = await saveCustomPoc(submitData)
+    if (res.code === 0) {
+      ElMessage.success(res.msg || t('poc.saveSuccess'))
+      customPocDialogVisible.value = false
+      // 保存成功后清除AI生成的缓存
+      aiGeneratedPocCache.value = ''
+      loadCustomPocs()
+    } else {
+      ElMessage.error(res.msg || t('common.operationFailed'))
+    }
+  } catch (error) {
+    if (error !== false) {
+      ElMessage.error(error?.message || t('common.operationFailed'))
+    }
+  } finally {
+    customPocSubmitting.value = false
   }
 }
 

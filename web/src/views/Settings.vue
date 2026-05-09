@@ -777,16 +777,25 @@ function showWorkspaceDialog(row = null) {
 }
 
 async function handleWorkspaceSubmit() {
-  await workspaceFormRef.value.validate()
-  workspaceSubmitting.value = true
   try {
-    const res = await request.post('/workspace/save', workspaceForm)
+    await workspaceFormRef.value.validate()
+    workspaceSubmitting.value = true
+    const payload = {
+      id: workspaceForm.id,
+      name: workspaceForm.name.trim(),
+      description: workspaceForm.description || ''
+    }
+    const res = await request.post('/workspace/save', payload)
     if (res.code === 0) {
       ElMessage.success(workspaceForm.id ? t('common.updateSuccess') : t('common.createSuccess'))
       workspaceDialogVisible.value = false
       loadWorkspaceList()
     } else {
-      ElMessage.error(res.msg)
+      ElMessage.error(res.msg || t('common.operationFailed'))
+    }
+  } catch (error) {
+    if (error !== false) {
+      ElMessage.error(error?.message || t('common.operationFailed'))
     }
   } finally {
     workspaceSubmitting.value = false
@@ -911,17 +920,26 @@ function showOrgDialog(row = null) {
 }
 
 async function handleOrgSubmit() {
-  await orgFormRef.value.validate()
-  orgSubmitting.value = true
   try {
-    const res = await request.post('/organization/save', orgForm)
+    await orgFormRef.value.validate()
+    orgSubmitting.value = true
+    const payload = {
+      id: orgForm.id,
+      name: orgForm.name.trim(),
+      description: orgForm.description || ''
+    }
+    const res = await request.post('/organization/save', payload)
     const data = res.data || res
     if (data.code === 0) {
       ElMessage.success(orgForm.id ? t('common.updateSuccess') : t('common.createSuccess'))
       orgDialogVisible.value = false
       loadOrgList()
     } else {
-      ElMessage.error(data.msg)
+      ElMessage.error(data.msg || t('common.operationFailed'))
+    }
+  } catch (error) {
+    if (error !== false) {
+      ElMessage.error(error?.message || t('common.operationFailed'))
     }
   } finally {
     orgSubmitting.value = false

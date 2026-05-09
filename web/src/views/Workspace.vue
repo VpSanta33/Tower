@@ -48,6 +48,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Plus } from '@element-plus/icons-vue'
 import request from '@/api/request'
 
 const { t } = useI18n()
@@ -82,16 +83,25 @@ function showDialog(row = null) {
 }
 
 async function handleSubmit() {
-  await formRef.value.validate()
-  submitting.value = true
   try {
-    const res = await request.post('/workspace/save', form)
+    await formRef.value.validate()
+    submitting.value = true
+    const payload = {
+      id: form.id,
+      name: form.name.trim(),
+      description: form.description || ''
+    }
+    const res = await request.post('/workspace/save', payload)
     if (res.code === 0) {
       ElMessage.success(form.id ? t('common.updateSuccess') : t('common.createSuccess'))
       dialogVisible.value = false
       loadData()
     } else {
-      ElMessage.error(res.msg)
+      ElMessage.error(res.msg || t('common.operationFailed'))
+    }
+  } catch (error) {
+    if (error !== false) {
+      ElMessage.error(error?.message || t('common.operationFailed'))
     }
   } finally {
     submitting.value = false
@@ -113,4 +123,3 @@ async function handleDelete(row) {
   .action-card { margin-bottom: 20px; }
 }
 </style>
-
