@@ -2133,7 +2133,3 @@ function querySearch(queryString, cb, ...fields) {
   opacity: 0;
 }
 </style>
-    if (detailAsset.value) {
-      detailAsset.value.dirScanResults = []
-      detailAsset.value.vulnScanResults = []
-    }

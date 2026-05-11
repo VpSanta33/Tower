@@ -31,6 +31,7 @@
       </template>
 
       <template #toolbar-right>
+        <el-button type="primary" plain @click="showImportDialog">{{ $t('common.import') }}</el-button>
         <el-button type="danger" plain @click="handleClear">{{ $t('asset.clearData') }}</el-button>
       </template>
 
@@ -88,6 +89,8 @@
 
       <!-- 列: 操作 -->
       <template #operation="{ row }">
+        <el-button type="primary" link size="small" @click="showDetail(row)">{{ $t('common.detail') }}</el-button>
+        <el-button type="warning" link size="small" @click="showDirScanDetail(row)">{{ $t('asset.dirScan') }}</el-button>
         <el-button type="danger" link size="small" @click="handleDelete(row)">{{ $t('common.delete') }}</el-button>
       </template>
     </ProTable>
@@ -321,6 +324,23 @@
         <el-button @click="dirScanDetailVisible = false">关闭</el-button>
       </template>
     </el-dialog>
+
+    <!-- 导入对话框 -->
+    <el-dialog v-model="importDialogVisible" :title="$t('common.import')" width="600px">
+      <el-input
+        v-model="importTargets"
+        type="textarea"
+        :rows="10"
+        :placeholder="$t('asset.importPlaceholder') || '每行输入一个目标\n支持格式：URL、域名、IP:端口'"
+      />
+      <div v-if="importTargetCount > 0" style="margin-top: 8px; color: var(--el-text-color-secondary)">
+        {{ $t('common.total') || '共' }} {{ importTargetCount }} {{ $t('common.items') || '条' }}
+      </div>
+      <template #footer>
+        <el-button @click="importDialogVisible = false">{{ $t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="importLoading" @click="handleImport">{{ $t('common.confirm') }}</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -329,7 +349,7 @@ import { ref, onMounted, onUnmounted, watch, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowDown, Right } from '@element-plus/icons-vue'
-import { getAssetList, batchDeleteAssets, clearAssets } from '@/api/asset'
+import { getAssetList, batchDeleteAssets, clearAssets, importAssets } from '@/api/asset'
 import request from '@/api/request'
 import ProTable from '@/components/common/ProTable.vue'
 

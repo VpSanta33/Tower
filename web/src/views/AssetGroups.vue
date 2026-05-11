@@ -167,6 +167,29 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <!-- 过滤对话框 -->
+    <el-dialog v-model="showFilterDialog" title="过滤条件" width="500px">
+      <el-form label-width="100px">
+        <el-form-item label="发现类型">
+          <el-select v-model="filterType" placeholder="选择类型" clearable style="width: 100%">
+            <el-option label="自动发现" value="Auto Discovery" />
+            <el-option label="手动添加" value="Manual" />
+            <el-option label="API导入" value="API Import" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="状态">
+          <el-select v-model="filterStatus" placeholder="选择状态" clearable style="width: 100%">
+            <el-option label="活跃" value="active" />
+            <el-option label="暂停" value="paused" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showFilterDialog = false">取消</el-button>
+        <el-button type="primary" @click="applyFilter">应用</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -192,6 +215,8 @@ const loading = ref(false)
 const searchQuery = ref('')
 const showCreateGroupDialog = ref(false)
 const showFilterDialog = ref(false)
+const filterType = ref('')
+const filterStatus = ref('')
 const editingGroup = ref(null)
 
 // 分组表单
@@ -207,18 +232,34 @@ const assetGroups = ref([])
 
 // 计算属性
 const filteredGroups = computed(() => {
-  if (!searchQuery.value) return assetGroups.value
-  
-  const query = searchQuery.value.toLowerCase()
-  return assetGroups.value.filter(group =>
-    group.domain.toLowerCase().includes(query) ||
-    group.source?.toLowerCase().includes(query)
-  )
+  let result = assetGroups.value
+
+  if (searchQuery.value) {
+    const query = searchQuery.value.toLowerCase()
+    result = result.filter(group =>
+      group.domain.toLowerCase().includes(query) ||
+      group.source?.toLowerCase().includes(query)
+    )
+  }
+
+  if (filterType.value) {
+    result = result.filter(group => group.source === filterType.value)
+  }
+
+  if (filterStatus.value) {
+    result = result.filter(group => group.status === filterStatus.value)
+  }
+
+  return result
 })
 
 // 方法
 const handleSearch = () => {
   // 搜索逻辑
+}
+
+const applyFilter = () => {
+  showFilterDialog.value = false
 }
 
 const loadAssetGroups = async () => {

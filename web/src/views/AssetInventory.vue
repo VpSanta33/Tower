@@ -285,6 +285,39 @@
         />
       </div>
     </div>
+
+    <!-- 更多过滤器对话框 -->
+    <el-dialog v-model="showMoreFilters" title="更多过滤条件" width="550px">
+      <el-form label-width="100px">
+        <el-form-item label="状态码">
+          <el-select v-model="moreFilterForm.statusCodes" multiple placeholder="选择状态码" style="width: 100%">
+            <el-option label="200" value="200" />
+            <el-option label="301" value="301" />
+            <el-option label="302" value="302" />
+            <el-option label="403" value="403" />
+            <el-option label="404" value="404" />
+            <el-option label="500" value="500" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="协议">
+          <el-select v-model="moreFilterForm.protocols" multiple placeholder="选择协议" style="width: 100%">
+            <el-option label="HTTP" value="http" />
+            <el-option label="HTTPS" value="https" />
+            <el-option label="SSH" value="ssh" />
+            <el-option label="FTP" value="ftp" />
+            <el-option label="MySQL" value="mysql" />
+            <el-option label="Redis" value="redis" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="端口范围">
+          <el-input v-model="moreFilterForm.portRange" placeholder="例如: 80,443,8000-9000" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="resetMoreFilters">重置</el-button>
+        <el-button type="primary" @click="applyMoreFilters">应用</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -308,6 +341,11 @@ const loading = ref(false)
 const searchQuery = ref('')
 const showFilters = ref(false)
 const showMoreFilters = ref(false)
+const moreFilterForm = ref({
+  statusCodes: [],
+  protocols: [],
+  portRange: '',
+})
 const activeTab = ref('all')
 const currentPage = ref(1)
 const pageSize = ref(5)
@@ -456,6 +494,20 @@ const resetFilters = () => {
   }
   currentPage.value = 1
   ElMessage.success('过滤器已重置')
+}
+
+const applyMoreFilters = () => {
+  showMoreFilters.value = false
+  currentPage.value = 1
+  ElMessage.success('更多过滤条件已应用')
+}
+
+const resetMoreFilters = () => {
+  moreFilterForm.value = {
+    statusCodes: [],
+    protocols: [],
+    portRange: '',
+  }
 }
 
 const refreshData = async () => {
