@@ -106,7 +106,7 @@
       <template #header>
         <div class="card-header">
           <span>{{ $t('navigation.workspaceManagement') }}</span>
-          <el-button type="primary" size="small" @click="showWorkspaceDialog()">
+          <el-button type="primary" size="small" @click.stop="openWorkspaceCreateDialog">
             <el-icon><Plus /></el-icon>{{ $t('workspace.newWorkspace') }}
           </el-button>
         </div>
@@ -136,7 +136,7 @@
       <template #header>
         <div class="card-header">
           <span>{{ $t('navigation.organizationManagement') }}</span>
-          <el-button type="primary" size="small" @click="showOrgDialog()">
+          <el-button type="primary" size="small" @click.stop="openOrgCreateDialog">
             <el-icon><Plus /></el-icon>{{ $t('organization.newOrganization') }}
           </el-button>
         </div>
@@ -399,7 +399,14 @@
     </el-card>
 
     <!-- 工作空间对话框 -->
-    <el-dialog v-model="workspaceDialogVisible" :title="workspaceForm.id ? $t('workspace.editWorkspace') : $t('workspace.newWorkspace')" width="500px">
+    <el-dialog
+      v-model="workspaceDialogVisible"
+      :title="workspaceForm.id ? $t('workspace.editWorkspace') : $t('workspace.newWorkspace')"
+      width="500px"
+      append-to-body
+      destroy-on-close
+      :close-on-click-modal="false"
+    >
       <el-form ref="workspaceFormRef" :model="workspaceForm" :rules="workspaceRules" label-width="80px">
         <el-form-item :label="$t('common.name')" prop="name">
           <el-input v-model="workspaceForm.name" :placeholder="$t('workspace.pleaseEnterName')" />
@@ -462,7 +469,14 @@
     </el-dialog>
 
     <!-- 组织对话框 -->
-    <el-dialog v-model="orgDialogVisible" :title="orgForm.id ? $t('organization.editOrganization') : $t('organization.newOrganization')" width="500px">
+    <el-dialog
+      v-model="orgDialogVisible"
+      :title="orgForm.id ? $t('organization.editOrganization') : $t('organization.newOrganization')"
+      width="500px"
+      append-to-body
+      destroy-on-close
+      :close-on-click-modal="false"
+    >
       <el-form ref="orgFormRef" :model="orgForm" :rules="orgRules" label-width="80px">
         <el-form-item :label="$t('common.name')" prop="name">
           <el-input v-model="orgForm.name" :placeholder="$t('organization.pleaseEnterOrgName')" />
@@ -488,6 +502,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Bell, Edit, Delete, Position } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import request from '@/api/request'
+import { useWorkspaceStore } from '@/stores/workspace'
 import { getSubfinderProviderList, getSubfinderProviderInfo, saveSubfinderProvider as saveSubfinderProviderApi } from '@/api/subfinder'
 import { getUserList, createUser, updateUser, deleteUser, resetUserPassword } from '@/api/auth'
 import { getNotifyProviders, getNotifyConfigList, saveNotifyConfig, deleteNotifyConfig, testNotifyConfig } from '@/api/notify'
@@ -496,6 +511,7 @@ const { t } = useI18n()
 
 const route = useRoute()
 const router = useRouter()
+const workspaceStore = useWorkspaceStore()
 
 // 有效的tab名称
 const validTabs = ['onlineapi', 'subfinder', 'workspace', 'organization', 'notify', 'user']
@@ -776,6 +792,11 @@ function showWorkspaceDialog(row = null) {
   workspaceDialogVisible.value = true
 }
 
+function openWorkspaceCreateDialog() {
+  Object.assign(workspaceForm, { id: '', name: '', description: '' })
+  workspaceDialogVisible.value = true
+}
+
 async function handleWorkspaceSubmit() {
   try {
     await workspaceFormRef.value.validate()
@@ -789,7 +810,8 @@ async function handleWorkspaceSubmit() {
     if (res.code === 0) {
       ElMessage.success(workspaceForm.id ? t('common.updateSuccess') : t('common.createSuccess'))
       workspaceDialogVisible.value = false
-      loadWorkspaceList()
+      await loadWorkspaceList()
+      await workspaceStore.loadWorkspaces()
     } else {
       ElMessage.error(res.msg || t('common.operationFailed'))
     }
@@ -919,6 +941,11 @@ function showOrgDialog(row = null) {
   orgDialogVisible.value = true
 }
 
+function openOrgCreateDialog() {
+  Object.assign(orgForm, { id: '', name: '', description: '' })
+  orgDialogVisible.value = true
+}
+
 async function handleOrgSubmit() {
   try {
     await orgFormRef.value.validate()
@@ -933,7 +960,7 @@ async function handleOrgSubmit() {
     if (data.code === 0) {
       ElMessage.success(orgForm.id ? t('common.updateSuccess') : t('common.createSuccess'))
       orgDialogVisible.value = false
-      loadOrgList()
+      await loadOrgList()
     } else {
       ElMessage.error(data.msg || t('common.operationFailed'))
     }
