@@ -111,13 +111,13 @@
               </el-icon>
               <template #title>{{ $t('navigation.highRiskFilter') }}</template>
             </el-menu-item>
-            <el-menu-item index="/settings?tab=workspace">
+            <el-menu-item index="/workspace">
               <el-icon>
                 <Folder />
               </el-icon>
               <template #title>{{ $t('navigation.workspaceManagement') }}</template>
             </el-menu-item>
-            <el-menu-item index="/settings?tab=organization">
+            <el-menu-item index="/organization">
               <el-icon>
                 <OfficeBuilding />
               </el-icon>

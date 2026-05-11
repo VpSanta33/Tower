@@ -27,7 +27,14 @@
       </el-table>
     </el-card>
 
-    <el-dialog v-model="dialogVisible" :title="form.id ? $t('workspace.editWorkspace') : $t('workspace.newWorkspace')" width="500px">
+    <el-dialog
+      v-model="dialogVisible"
+      :title="form.id ? $t('workspace.editWorkspace') : $t('workspace.newWorkspace')"
+      width="500px"
+      append-to-body
+      destroy-on-close
+      :close-on-click-modal="false"
+    >
       <el-form ref="formRef" :model="form" :rules="rules" label-width="80px">
         <el-form-item :label="$t('common.name')" prop="name">
           <el-input v-model="form.name" :placeholder="$t('workspace.pleaseEnterName')" />
@@ -50,8 +57,10 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import request from '@/api/request'
+import { useWorkspaceStore } from '@/stores/workspace'
 
 const { t } = useI18n()
+const workspaceStore = useWorkspaceStore()
 const loading = ref(false)
 const submitting = ref(false)
 const dialogVisible = ref(false)
@@ -95,7 +104,8 @@ async function handleSubmit() {
     if (res.code === 0) {
       ElMessage.success(form.id ? t('common.updateSuccess') : t('common.createSuccess'))
       dialogVisible.value = false
-      loadData()
+      await loadData()
+      await workspaceStore.loadWorkspaces()
     } else {
       ElMessage.error(res.msg || t('common.operationFailed'))
     }

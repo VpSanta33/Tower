@@ -30,7 +30,14 @@
       </el-table>
     </el-card>
 
-    <el-dialog v-model="dialogVisible" :title="form.id ? $t('organization.editOrganization') : $t('organization.newOrganization')" width="500px">
+    <el-dialog
+      v-model="dialogVisible"
+      :title="form.id ? $t('organization.editOrganization') : $t('organization.newOrganization')"
+      width="500px"
+      append-to-body
+      destroy-on-close
+      :close-on-click-modal="false"
+    >
       <el-form ref="formRef" :model="form" :rules="rules" label-width="80px">
         <el-form-item :label="$t('common.name')" prop="name">
           <el-input v-model="form.name" :placeholder="$t('organization.pleaseEnterOrgName')" />
@@ -100,7 +107,7 @@ async function handleSubmit() {
     if (data.code === 0) {
       ElMessage.success(form.id ? t('common.updateSuccess') : t('common.createSuccess'))
       dialogVisible.value = false
-      loadData()
+      await loadData()
     } else {
       ElMessage.error(data.msg || t('common.operationFailed'))
     }

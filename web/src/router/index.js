@@ -131,7 +131,7 @@ const routes = [
       {
         path: 'workspace',
         name: 'Workspace',
-        redirect: '/settings?tab=workspace',
+        component: lazyLoad(() => import('@/views/Workspace.vue')),
         meta: { title: '工作空间', icon: 'Folder', hidden: true }
       },
       {
@@ -191,7 +191,7 @@ const routes = [
       {
         path: 'organization',
         name: 'Organization',
-        redirect: '/settings?tab=organization',
+        component: lazyLoad(() => import('@/views/Organization.vue')),
         meta: { title: '组织管理', icon: 'OfficeBuilding', hidden: true }
       },
       {
