@@ -104,7 +104,7 @@
               </template>
             </el-table-column>
             <el-table-column prop="author" :label="$t('poc.author')" width="100" show-overflow-tooltip />
-            <el-table-column :label="$t('poc.operation')" width="120" fixed="right">
+            <el-table-column :label="$t('poc.operation')" width="120">
               <template #default="{ row }">
                 <el-button type="success" link size="small" @click="showTemplateValidateDialog(row)">{{ $t('poc.validate') }}</el-button>
                 <el-button type="primary" link size="small" @click="showTemplateContent(row)">{{ $t('poc.view') }}</el-button>
@@ -251,6 +251,7 @@
               <template #default="{ row }">
                 <el-button type="success" link size="small" @click="showPocValidateDialog(row)">{{ $t('poc.validate') }}</el-button>
                 <el-button type="warning" link size="small" @click="showScanAssetsDialog(row)">{{ $t('poc.scanAssets') }}</el-button>
+                <el-button type="primary" link size="small" @click="showCustomPocContent(row)">{{ $t('poc.view') }}</el-button>
                 <el-button type="primary" link size="small" @click="showCustomPocForm(row)">{{ $t('poc.edit') }}</el-button>
                 <el-button type="danger" link size="small" @click="handleDeleteCustomPoc(row)">{{ $t('poc.delete') }}</el-button>
               </template>
@@ -505,7 +506,7 @@
     </el-tabs>
 
     <!-- 目录扫描字典编辑对话框 -->
-    <el-dialog v-model="dirscanDictDialogVisible" :title="dirscanDictForm.id ? $t('poc.editDict') : $t('poc.addDictTitle')" width="700px">
+    <el-dialog v-model="dirscanDictDialogVisible" :title="dirscanDictForm.id ? $t('poc.editDict') : $t('poc.addDictTitle')" width="700px" append-to-body>
       <el-form ref="dirscanDictFormRef" :model="dirscanDictForm" :rules="dirscanDictRules" label-width="100px">
         <el-form-item :label="$t('poc.dictNameLabel')" prop="name">
           <el-input v-model="dirscanDictForm.name" :placeholder="$t('poc.dictNamePlaceholder')" />
@@ -540,7 +541,7 @@
     </el-dialog>
 
     <!-- 子域名字典编辑对话框 -->
-    <el-dialog v-model="subdomainDictDialogVisible" :title="subdomainDictForm.id ? $t('poc.editDict') : $t('poc.addDictTitle')" width="700px">
+    <el-dialog v-model="subdomainDictDialogVisible" :title="subdomainDictForm.id ? $t('poc.editDict') : $t('poc.addDictTitle')" width="700px" append-to-body>
       <el-form ref="subdomainDictFormRef" :model="subdomainDictForm" :rules="subdomainDictRules" label-width="100px">
         <el-form-item :label="$t('poc.dictNameLabel')" prop="name">
           <el-input v-model="subdomainDictForm.name" :placeholder="$t('poc.dictNamePlaceholder')" />
@@ -575,7 +576,7 @@
     </el-dialog>
 
     <!-- 弱口令字典编辑对话框 -->
-    <el-dialog v-model="weakpassDictDialogVisible" :title="weakpassDictForm.id ? $t('poc.editDict') : $t('poc.addDictTitle')" width="700px">
+    <el-dialog v-model="weakpassDictDialogVisible" :title="weakpassDictForm.id ? $t('poc.editDict') : $t('poc.addDictTitle')" width="700px" append-to-body>
       <el-form ref="weakpassDictFormRef" :model="weakpassDictForm" :rules="weakpassDictRules" label-width="100px">
         <el-form-item :label="$t('poc.dictNameLabel')" prop="name">
           <el-input v-model="weakpassDictForm.name" :placeholder="$t('poc.dictNamePlaceholder')" />
@@ -615,7 +616,7 @@
     </el-dialog>
 
     <!-- 标签映射编辑对话框 -->
-    <el-dialog v-model="tagMappingDialogVisible" :title="tagMappingForm.id ? $t('poc.editMapping') : $t('poc.addMappingTitle')" width="500px">
+    <el-dialog v-model="tagMappingDialogVisible" :title="tagMappingForm.id ? $t('poc.editMapping') : $t('poc.addMappingTitle')" width="500px" append-to-body>
       <el-form ref="tagMappingFormRef" :model="tagMappingForm" :rules="tagMappingRules" label-width="100px">
         <el-form-item :label="$t('poc.appNameLabel')" prop="appName">
           <el-input v-model="tagMappingForm.appName" :placeholder="$t('poc.appNamePlaceholder')" />
@@ -644,7 +645,7 @@
     </el-dialog>
 
     <!-- 自定义POC编辑对话框 -->
-    <el-dialog v-model="customPocDialogVisible" :title="customPocForm.id ? $t('poc.editPoc') : $t('poc.addPocTitle')" width="900px">
+    <el-dialog v-model="customPocDialogVisible" :title="customPocForm.id ? $t('poc.editPoc') : $t('poc.addPocTitle')" width="900px" append-to-body>
       <el-form ref="customPocFormRef" :model="customPocForm" :rules="customPocRules" label-width="100px">
         <el-form-item :label="$t('poc.yamlContent')" prop="content">
           <div style="width: 100%">
@@ -718,7 +719,7 @@
     </el-dialog>
 
     <!-- AI辅助编写POC对话框 -->
-    <el-dialog v-model="aiAssistDialogVisible" :title="$t('poc.aiAssistTitle')" width="700px">
+    <el-dialog v-model="aiAssistDialogVisible" :title="$t('poc.aiAssistTitle')" width="700px" append-to-body>
       <!-- AI配置折叠面板 -->
       <el-collapse v-model="aiConfigCollapse" style="margin-bottom: 15px;">
         <el-collapse-item :title="$t('poc.aiServiceConfig')" name="config">
@@ -802,6 +803,7 @@
       v-model="importPocDialogVisible"
       :title="$t('poc.importPocTitle')"
       width="550px"
+      append-to-body
       :close-on-click-modal="!importPocLoading"
       :close-on-press-escape="!importPocLoading"
       :show-close="!importPocLoading"
@@ -875,7 +877,7 @@
     </el-dialog>
 
     <!-- 查看模板内容对话框 -->
-    <el-dialog v-model="templateContentDialogVisible" :title="currentTemplate.name || $t('poc.templateContent')" width="900px">
+    <el-dialog v-model="templateContentDialogVisible" :title="currentTemplate.name || $t('poc.templateContent')" width="900px" append-to-body>
       <el-descriptions :column="2" border size="small" style="margin-bottom: 15px">
         <el-descriptions-item :label="$t('poc.templateId')">{{ currentTemplate.id }}</el-descriptions-item>
         <el-descriptions-item :label="$t('poc.severityLevel')">
@@ -908,6 +910,7 @@
       v-model="downloadTemplateDialogVisible" 
       :title="$t('poc.syncTemplateLib')" 
       width="550px"
+      append-to-body
       :close-on-click-modal="!downloadTemplateLoading"
       :close-on-press-escape="!downloadTemplateLoading"
       :show-close="!downloadTemplateLoading"
@@ -981,7 +984,7 @@
     </el-dialog>
 
     <!-- POC验证对话框 -->
-    <el-dialog v-model="pocValidateDialogVisible" :title="$t('poc.validatePoc')" width="700px" @close="handleValidateDialogClose">
+    <el-dialog v-model="pocValidateDialogVisible" :title="$t('poc.validatePoc')" width="700px" append-to-body @close="handleValidateDialogClose">
       <el-form label-width="80px">
         <el-form-item :label="$t('poc.pocName')">
           <el-input :value="validatePoc.name" disabled />
@@ -1030,7 +1033,7 @@
     </el-dialog>
 
     <!-- 默认模板批量验证对话框 -->
-    <el-dialog v-model="templateBatchValidateDialogVisible" :title="$t('poc.batchValidatePoc')" width="900px" @close="handleBatchValidateDialogClose">
+    <el-dialog v-model="templateBatchValidateDialogVisible" :title="$t('poc.batchValidatePoc')" width="900px" append-to-body @close="handleBatchValidateDialogClose">
       <el-form label-width="100px">
         <el-form-item :label="$t('poc.selectedTemplates')">
           <div class="selected-templates">
@@ -1152,7 +1155,7 @@
     </el-dialog>
 
     <!-- 扫描现有资产对话框 -->
-    <el-dialog v-model="scanAssetsDialogVisible" :title="$t('poc.scanExistingAssets')" width="900px" @close="handleScanAssetsDialogClose">
+    <el-dialog v-model="scanAssetsDialogVisible" :title="$t('poc.scanExistingAssets')" width="900px" append-to-body @close="handleScanAssetsDialogClose">
       <el-descriptions :column="2" border size="small" style="margin-bottom: 15px">
         <el-descriptions-item :label="$t('poc.pocName')">{{ scanAssetsPoc.name }}</el-descriptions-item>
         <el-descriptions-item :label="$t('poc.templateId')">{{ scanAssetsPoc.templateId }}</el-descriptions-item>
@@ -1690,18 +1693,20 @@ function handleTabChange(tab) {
   // Tab切换时更新URL
   router.replace({ query: { ...route.query, tab: tab } })
   
-  if (tab === 'nucleiTemplates' && nucleiTemplates.value.length === 0) {
-    loadNucleiTemplateCategories()
-    loadNucleiTemplates()
-  } else if (tab === 'tagMapping' && tagMappings.value.length === 0) {
-    loadTagMappings()
-  } else if (tab === 'customPoc' && customPocs.value.length === 0) {
-    loadCustomPocs()
-  } else if (tab === 'dirscanDict' && dirscanDicts.value.length === 0) {
+  if (tab === 'nucleiTemplates') {
+    if (nucleiTemplates.value.length === 0) {
+      loadNucleiTemplateCategories()
+      loadNucleiTemplates()
+    }
+  } else if (tab === 'tagMapping') {
+    if (tagMappings.value.length === 0) loadTagMappings()
+  } else if (tab === 'customPoc') {
+    if (customPocs.value.length === 0) loadCustomPocs()
+  } else if (tab === 'dirscanDict') {
     loadDirscanDicts()
-  } else if (tab === 'subdomainDict' && subdomainDicts.value.length === 0) {
+  } else if (tab === 'subdomainDict') {
     loadSubdomainDicts()
-  } else if (tab === 'weakpassDict' && weakpassDicts.value.length === 0) {
+  } else if (tab === 'weakpassDict') {
     loadWeakpassDicts()
   } else if (tab === 'jsfinderConfig' && !jsfinderLoaded.value) {
     loadJSFinderConfigData()
@@ -1738,6 +1743,8 @@ async function loadNucleiTemplates() {
     } else {
       ElMessage.error(res.msg || '加载模板失败')
     }
+  } catch (e) {
+    console.error('加载Nuclei模板失败:', e)
   } finally {
     nucleiTemplateLoading.value = false
   }
@@ -2100,16 +2107,34 @@ async function handleClearTemplates() {
 }
 
 async function showTemplateContent(row) {
-  // 需要从API获取完整内容
-  const res = await getNucleiTemplateDetail({ templateId: row.id })
-  if (res.code === 0 && res.data) {
-    currentTemplate.value = res.data
-    // 如果内容为空，提示用户强制同步
-    if (!res.data.content) {
-      currentTemplate.value.content = '# YAML内容为空\n# 请点击"同步模板" -> "从本地文件夹导入"来更新模板内容'
+  currentTemplate.value = { ...row, content: '加载中...' }
+  templateContentDialogVisible.value = true
+  try {
+    const res = await getNucleiTemplateDetail({ templateId: row.id })
+    if (res.code === 0 && res.data) {
+      currentTemplate.value = res.data
+      if (!res.data.content) {
+        currentTemplate.value.content = '# YAML内容为空\n# 请点击"同步模板" -> "从本地文件夹导入"来更新模板内容'
+      }
+    } else {
+      currentTemplate.value = { ...row, content: '加载失败，请重试' }
     }
-  } else {
-    currentTemplate.value = { ...row, content: '加载失败，请重试' }
+  } catch (e) {
+    console.error('获取模板详情失败:', e)
+    currentTemplate.value = { ...row, content: '加载失败: ' + (e.message || '网络错误') }
+  }
+}
+
+function showCustomPocContent(row) {
+  currentTemplate.value = {
+    id: row.templateId || row.id,
+    name: row.name,
+    severity: row.severity,
+    category: 'custom',
+    author: row.author,
+    tags: row.tags || [],
+    description: row.description,
+    content: row.content || '# POC内容为空'
   }
   templateContentDialogVisible.value = true
 }
@@ -2159,6 +2184,8 @@ async function loadTagMappings() {
     if (res.code === 0) {
       tagMappings.value = res.list || []
     }
+  } catch (e) {
+    console.error('加载标签映射失败:', e)
   } finally {
     tagMappingLoading.value = false
   }
@@ -2193,6 +2220,8 @@ async function loadCustomPocs() {
       customPocs.value = res.list || []
       pocPagination.total = res.total
     }
+  } catch (e) {
+    console.error('加载自定义POC失败:', e)
   } finally {
     customPocLoading.value = false
   }
@@ -2233,7 +2262,7 @@ function showTagMappingForm(row = null) {
 }
 
 async function handleSaveTagMapping() {
-  await tagMappingFormRef.value.validate()
+  try { await tagMappingFormRef.value.validate() } catch { return }
   // 将逗号分隔的字符串转换为数组
   const tagsArray = tagMappingForm.nucleiTagsInput
     .split(/[,，]/) // 支持中英文逗号
@@ -2259,7 +2288,9 @@ async function handleSaveTagMapping() {
 }
 
 async function handleDeleteTagMapping(row) {
-  await ElMessageBox.confirm(t('poc.confirmDeleteMapping'), t('common.tip'), { type: 'warning' })
+  try {
+    await ElMessageBox.confirm(t('poc.confirmDeleteMapping'), t('common.tip'), { type: 'warning' })
+  } catch { return }
   const res = await deleteTagMapping({ id: row.id })
   if (res.code === 0) {
     ElMessage.success(t('poc.deleteSuccess'))
@@ -2371,7 +2402,9 @@ async function handleSaveCustomPoc() {
 }
 
 async function handleDeleteCustomPoc(row) {
-  await ElMessageBox.confirm(t('poc.confirmDeletePoc'), t('common.tip'), { type: 'warning' })
+  try {
+    await ElMessageBox.confirm(t('poc.confirmDeletePoc'), t('common.tip'), { type: 'warning' })
+  } catch { return }
   const res = await deleteCustomPoc({ id: row.id })
   if (res.code === 0) {
     ElMessage.success(t('poc.deleteSuccess'))

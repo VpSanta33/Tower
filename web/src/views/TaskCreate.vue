@@ -669,7 +669,7 @@
     </el-card>
 
     <!-- 目录扫描字典选择对话框 -->
-    <el-dialog v-model="dictSelectDialogVisible" :title="$t('task.selectDirScanDict')" width="800px" @open="handleDictDialogOpen">
+    <el-dialog v-model="dictSelectDialogVisible" :title="$t('task.selectDirScanDict')" width="800px" append-to-body @open="handleDictDialogOpen">
       <el-table 
         ref="dictTableRef"
         :data="dictList" 
@@ -694,7 +694,7 @@
     </el-dialog>
 
     <!-- 子域名字典选择对话框 -->
-    <el-dialog v-model="subdomainDictSelectDialogVisible" :title="$t('task.selectSubdomainDict')" width="800px" @open="handleSubdomainDictDialogOpen">
+    <el-dialog v-model="subdomainDictSelectDialogVisible" :title="$t('task.selectSubdomainDict')" width="800px" append-to-body @open="handleSubdomainDictDialogOpen">
       <el-table 
         ref="subdomainDictTableRef"
         :data="subdomainDictList" 
@@ -719,7 +719,7 @@
     </el-dialog>
 
     <!-- 递归爆破字典选择对话框 -->
-    <el-dialog v-model="recursiveDictSelectDialogVisible" :title="$t('task.selectRecursiveDict')" width="800px" @open="handleRecursiveDictDialogOpen">
+    <el-dialog v-model="recursiveDictSelectDialogVisible" :title="$t('task.selectRecursiveDict')" width="800px" append-to-body @open="handleRecursiveDictDialogOpen">
       <el-table 
         ref="recursiveDictTableRef"
         :data="recursiveDictList" 
@@ -744,7 +744,7 @@
     </el-dialog>
 
     <!-- POC选择对话框 -->
-    <el-dialog v-model="pocSelectDialogVisible" :title="$t('task.selectPoc')" width="1200px" @open="handlePocDialogOpen">
+    <el-dialog v-model="pocSelectDialogVisible" :title="$t('task.selectPoc')" width="1200px" append-to-body @open="handlePocDialogOpen">
       <div class="poc-select-container">
         <!-- 左侧：POC列表 -->
         <div class="poc-select-left">
@@ -796,7 +796,7 @@
                     <span v-if="row.tags && row.tags.length > 2" class="secondary-hint">+{{ row.tags.length - 2 }}</span>
                   </template>
                 </el-table-column>
-                <el-table-column :label="$t('common.operation')" width="60" fixed="right">
+                <el-table-column :label="$t('common.operation')" width="60">
                   <template #default="{ row }">
                     <el-button type="primary" link size="small" @click="viewPocContent(row, 'nuclei')">{{ $t('common.view') }}</el-button>
                   </template>
@@ -855,7 +855,7 @@
                     <el-tag :type="getSeverityType(row.severity)" size="small">{{ row.severity }}</el-tag>
                   </template>
                 </el-table-column>
-                <el-table-column :label="$t('common.operation')" width="60" fixed="right">
+                <el-table-column :label="$t('common.operation')" width="60">
                   <template #default="{ row }">
                     <el-button type="primary" link size="small" @click="viewPocContent(row, 'custom')">{{ $t('common.view') }}</el-button>
                   </template>
@@ -928,7 +928,7 @@
     </el-dialog>
 
     <!-- 查看POC内容对话框 -->
-    <el-dialog v-model="pocContentDialogVisible" :title="pocContentTitle" width="800px">
+    <el-dialog v-model="pocContentDialogVisible" :title="pocContentTitle" width="800px" append-to-body>
       <el-descriptions :column="2" border size="small" style="margin-bottom: 15px">
         <el-descriptions-item :label="$t('task.templateId')">{{ currentViewPoc.id || currentViewPoc.templateId }}</el-descriptions-item>
         <el-descriptions-item :label="$t('common.name')">{{ currentViewPoc.name }}</el-descriptions-item>
@@ -1219,10 +1219,11 @@ onMounted(async () => {
   await loadWorkers()
   await loadCommonTags()
   
-  // 检查是否是编辑模式
-  if (route.query.id) {
+  // 检查是否是编辑模式（支持 /task/edit/:id 和 /task/create?id=xxx）
+  const editId = route.params.id || route.query.id
+  if (editId) {
     isEdit.value = true
-    await loadTaskDetail(route.query.id)
+    await loadTaskDetail(editId)
   } else {
     // 加载用户上次保存的扫描配置
     try {
@@ -2280,7 +2281,7 @@ async function loadDictList() {
   try {
     const res = await getDirScanDictEnabledList()
     if (res.code === 0) {
-      dictList.value = res.list || []
+      dictList.value = res.list || res.data || []
     }
   } catch (e) {
     console.error('Load dictionary list failed:', e)
@@ -2334,7 +2335,7 @@ async function loadSubdomainDictList() {
   try {
     const res = await getSubdomainDictEnabledList()
     if (res.code === 0) {
-      subdomainDictList.value = res.list || []
+      subdomainDictList.value = res.list || res.data || []
     }
   } catch (e) {
     console.error('Load subdomain dictionary list failed:', e)
@@ -2388,7 +2389,7 @@ async function loadRecursiveDictList() {
   try {
     const res = await getSubdomainDictEnabledList()
     if (res.code === 0) {
-      recursiveDictList.value = res.list || []
+      recursiveDictList.value = res.list || res.data || []
     }
   } catch (e) {
     console.error('Load recursive dictionary list failed:', e)

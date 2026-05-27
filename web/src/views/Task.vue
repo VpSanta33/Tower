@@ -654,7 +654,7 @@
     </el-drawer>
 
     <!-- 新建/编辑任务对话框 - Tab页布局 -->
-    <el-dialog v-model="dialogVisible" :title="isEdit ? $t('task.editTask') : $t('task.newTask')" width="720px" top="5vh" class="task-dialog">
+    <el-dialog v-model="dialogVisible" :title="isEdit ? $t('task.editTask') : $t('task.newTask')" width="720px" top="5vh" class="task-dialog" append-to-body>
       <el-tabs v-model="activeTab" class="task-tabs">
         <!-- 基本信息 Tab -->
         <el-tab-pane :label="$t('task.basicInfo')" name="basic">
@@ -1164,17 +1164,25 @@ function parseLogMessage(log) {
   return { ...log, subTask, displayMessage: message }
 }
 
+function handleWorkspaceChanged() {
+  pagination.page = 1
+  loadData()
+}
+
 onMounted(() => {
   loadData()
   loadOrganizations()
   loadWorkers()
   if (autoRefresh.value) startAutoRefresh()
-  window.addEventListener('workspace-changed', () => { pagination.page = 1; loadData() })
+  window.addEventListener('workspace-changed', handleWorkspaceChanged)
 })
 
 onUnmounted(() => {
   stopAutoRefresh()
+  stopLogPolling()
+  if (saveConfigTimer) { clearTimeout(saveConfigTimer); saveConfigTimer = null }
   if (logEventSource) { logEventSource.close(); logEventSource = null }
+  window.removeEventListener('workspace-changed', handleWorkspaceChanged)
 })
 
 function handleAutoRefreshChange(val) { val ? startAutoRefresh() : stopAutoRefresh() }
@@ -1194,11 +1202,12 @@ async function loadData() {
     }
     const res = await getTaskList(params)
     if (res.code === 0) { 
-      tableData.value = res.list || []
-      pagination.total = res.total 
+      const dataContainer = res.data?.list !== undefined ? res.data : res
+      tableData.value = dataContainer.list || []
+      pagination.total = dataContainer.total || 0
       // 收集所有标签
       const tagSet = new Set()
-      res.list.forEach(task => {
+      tableData.value.forEach(task => {
         if (task.tags && Array.isArray(task.tags)) {
           task.tags.forEach(tag => tagSet.add(tag))
         }
@@ -1358,14 +1367,6 @@ async function showCreateDialog() {
   loadWorkers()
   isEdit.value = false
   resetForm()
-  // 加载用户上次保存的扫描配置
-  try {
-    const res = await getScanConfig()
-    if (res.code === 0 && res.config) {
-      const config = JSON.parse(res.config)
-      applyConfig(config)
-    }
-  } catch (e) { console.error('加载扫描配置失败:', e) }
   let wsId = workspaceStore.currentWorkspaceId
   if (wsId === 'all' || !wsId) {
     const defaultWs = workspaceStore.workspaces.find(ws => ws.name === '默认工作空间')
@@ -1374,6 +1375,14 @@ async function showCreateDialog() {
   form.workspaceId = wsId
   activeTab.value = 'basic'
   dialogVisible.value = true
+  // 加载用户上次保存的扫描配置
+  try {
+    const res = await getScanConfig()
+    if (res.code === 0 && res.config) {
+      const config = JSON.parse(res.config)
+      applyConfig(config)
+    }
+  } catch (e) { console.error('加载扫描配置失败:', e) }
 }
 
 // 应用配置到表单
@@ -1486,7 +1495,7 @@ watch(
 )
 
 async function handleSubmit() {
-  await formRef.value.validate()
+  try { await formRef.value.validate() } catch { return }
   submitting.value = true
   try {
     const config = buildConfig()
@@ -1507,7 +1516,9 @@ async function handleSubmit() {
 }
 
 async function handleDelete(row) {
-  await ElMessageBox.confirm(t('task.confirmDeleteTask'), t('common.tip'), { type: 'warning' })
+  try {
+    await ElMessageBox.confirm(t('task.confirmDeleteTask'), t('common.tip'), { type: 'warning' })
+  } catch { return }
   const res = await deleteTask({ id: row.id, workspaceId: row.workspaceId })
   res.code === 0 ? (ElMessage.success(t('task.deleteSuccess')), loadData()) : ElMessage.error(res.msg)
 }
@@ -1522,7 +1533,9 @@ async function handleBatchDelete() {
     ElMessage.warning(t('task.batchDeleteSameWorkspace'))
     return
   }
-  await ElMessageBox.confirm(t('task.confirmBatchDelete', { count: selectedRows.value.length }), t('common.tip'), { type: 'warning' })
+  try {
+    await ElMessageBox.confirm(t('task.confirmBatchDelete', { count: selectedRows.value.length }), t('common.tip'), { type: 'warning' })
+  } catch { return }
   const res = await batchDeleteTask({ ids: selectedRows.value.map(row => row.id), workspaceId: workspaceIds[0] })
   res.code === 0 ? (ElMessage.success(t('task.deleteSuccess')), selectedRows.value = [], loadData()) : ElMessage.error(res.msg)
 }
@@ -1551,7 +1564,9 @@ async function handleStart(row) {
 }
 
 async function handlePause(row) {
-  await ElMessageBox.confirm(t('task.confirmPause'), t('common.tip'), { type: 'warning' })
+  try {
+    await ElMessageBox.confirm(t('task.confirmPause'), t('common.tip'), { type: 'warning' })
+  } catch { return }
   const res = await pauseTask({ id: row.id, workspaceId: row.workspaceId })
   res.code === 0 ? (ElMessage.success(t('task.taskPaused')), loadData()) : ElMessage.error(res.msg)
 }
@@ -1562,7 +1577,9 @@ async function handleResume(row) {
 }
 
 async function handleStop(row) {
-  await ElMessageBox.confirm(t('task.confirmStop'), t('common.tip'), { type: 'warning' })
+  try {
+    await ElMessageBox.confirm(t('task.confirmStop'), t('common.tip'), { type: 'warning' })
+  } catch { return }
   const res = await stopTask({ id: row.id, workspaceId: row.workspaceId })
   res.code === 0 ? (ElMessage.success(t('task.taskStopped')), loadData()) : ElMessage.error(res.msg)
 }

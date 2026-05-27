@@ -245,8 +245,9 @@ async function loadData() {
       orgId: searchForm.orgId
     })
     if (res.code === 0) {
-      tableData.value = res.list || []
-      pagination.total = res.total || 0
+      const dataContainer = res.data?.list !== undefined ? res.data : res
+      tableData.value = dataContainer.list || []
+      pagination.total = dataContainer.total || 0
     }
   } finally {
     loading.value = false
@@ -271,7 +272,8 @@ async function loadOrganizations() {
   try {
     const res = await request.post('/organization/list', { page: 1, pageSize: 100 })
     if (res.code === 0) {
-      organizations.value = res.list || []
+      const dataContainer = res.data?.list !== undefined ? res.data : res
+      organizations.value = dataContainer.list || []
     }
   } catch (e) {
     console.error('Failed to load organizations:', e)
@@ -293,7 +295,9 @@ function handleSelectionChange(rows) {
 }
 
 async function handleDelete(row) {
-  await ElMessageBox.confirm(t('ip.confirmDeleteIP'), t('common.tip'), { type: 'warning' })
+  try {
+    await ElMessageBox.confirm(t('ip.confirmDeleteIP'), t('common.tip'), { type: 'warning' })
+  } catch { return }
   const res = await request.post('/asset/ip/delete', { ip: row.ip })
   if (res.code === 0) {
     ElMessage.success(t('common.deleteSuccess'))
@@ -304,7 +308,9 @@ async function handleDelete(row) {
 
 async function handleBatchDelete() {
   if (selectedRows.value.length === 0) return
-  await ElMessageBox.confirm(t('ip.confirmBatchDeleteIP', { count: selectedRows.value.length }), t('common.tip'), { type: 'warning' })
+  try {
+    await ElMessageBox.confirm(t('ip.confirmBatchDeleteIP', { count: selectedRows.value.length }), t('common.tip'), { type: 'warning' })
+  } catch { return }
   const ips = selectedRows.value.map(row => row.ip)
   const res = await request.post('/asset/ip/batchDelete', { ips })
   if (res.code === 0) {
@@ -443,4 +449,3 @@ function getPortType(service) {
   }
 }
 </style>
-

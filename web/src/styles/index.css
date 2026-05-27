@@ -1469,6 +1469,7 @@ html.dark .el-card:hover {
   content: '';
   position: absolute;
   inset: 0;
+  pointer-events: none;
   opacity: 0.16;
   background-image:
     linear-gradient(rgba(103, 232, 249, 0.26) 1px, transparent 1px),
@@ -2311,4 +2312,9 @@ html.dark .logs-bg {
 .asset-all-view .filter-column .el-select .el-select__wrapper {
   height: 24px;
   min-height: 24px;
+}
+
+/* 修复 el-table 固定列在 tab-pane 中阻止点击事件的问题 */
+.el-table__body-wrapper .el-table-fixed-column--right {
+  z-index: auto;
 }

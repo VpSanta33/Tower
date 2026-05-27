@@ -41,9 +41,21 @@ const isLoginRequest = (config) => {
   return url === '/login' || url.endsWith('/login')
 }
 
+function normalizeResponseData(res) {
+  if (res?.code !== 0 || !res.data || typeof res.data !== 'object' || Array.isArray(res.data)) {
+    return res
+  }
+  for (const [key, value] of Object.entries(res.data)) {
+    if (res[key] === undefined) {
+      res[key] = value
+    }
+  }
+  return res
+}
+
 request.interceptors.response.use(
   response => {
-    const res = response.data
+    const res = normalizeResponseData(response.data)
     if (res.code === 401) {
       if (isLoginRequest(response.config)) {
         return res

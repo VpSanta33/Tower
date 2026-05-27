@@ -412,8 +412,9 @@ async function loadData() {
 
     const res = await request.post(props.api, payload)
     if (res.code === 0) {
-      tableData.value = res.list || []
-      pagination.total = res.total || 0
+      const dataContainer = res.data?.list !== undefined ? res.data : res
+      tableData.value = dataContainer.list || []
+      pagination.total = dataContainer.total || 0
     }
   } catch (error) {
     console.error('Failed to load table data:', error)

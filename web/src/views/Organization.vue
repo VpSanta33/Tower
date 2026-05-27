@@ -121,7 +121,9 @@ async function handleSubmit() {
 }
 
 async function handleDelete(row) {
-  await ElMessageBox.confirm(t('organization.confirmDeleteOrg'), t('common.tip'), { type: 'warning' })
+  try {
+    await ElMessageBox.confirm(t('organization.confirmDeleteOrg'), t('common.tip'), { type: 'warning' })
+  } catch { return }
   const res = await request.post('/organization/delete', { id: row.id })
   const data = res.data || res
   if (data.code === 0) {

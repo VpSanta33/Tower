@@ -100,7 +100,7 @@
     </el-card>
 
     <!-- 新建/编辑对话框 -->
-    <el-dialog v-model="dialogVisible" :title="isEdit ? $t('cronTask.editCronTask') : $t('cronTask.newCronTask')" width="1000px">
+    <el-dialog v-model="dialogVisible" :title="isEdit ? $t('cronTask.editCronTask') : $t('cronTask.newCronTask')" width="1000px" append-to-body>
       <el-form ref="formRef" :model="form" :rules="rules" label-width="110px">
         <el-form-item :label="$t('cronTask.cronTaskName')" prop="name">
           <el-input v-model="form.name" :placeholder="$t('cronTask.pleaseEnterName')" />
@@ -789,7 +789,7 @@
     </el-dialog>
 
     <!-- 目录扫描字典选择对话框 -->
-    <el-dialog v-model="dictSelectDialogVisible" :title="$t('task.selectDirScanDict')" width="800px" @open="handleDictDialogOpen">
+    <el-dialog v-model="dictSelectDialogVisible" :title="$t('task.selectDirScanDict')" width="800px" append-to-body @open="handleDictDialogOpen">
       <el-table 
         ref="dictTableRef"
         :data="dictList" 
@@ -814,7 +814,7 @@
     </el-dialog>
 
     <!-- 子域名字典选择对话框 -->
-    <el-dialog v-model="subdomainDictSelectDialogVisible" :title="$t('task.selectSubdomainDict')" width="800px" @open="handleSubdomainDictDialogOpen">
+    <el-dialog v-model="subdomainDictSelectDialogVisible" :title="$t('task.selectSubdomainDict')" width="800px" append-to-body @open="handleSubdomainDictDialogOpen">
       <el-table 
         ref="subdomainDictTableRef"
         :data="subdomainDictList" 
@@ -839,7 +839,7 @@
     </el-dialog>
 
     <!-- 递归爆破字典选择对话框 -->
-    <el-dialog v-model="recursiveDictSelectDialogVisible" :title="$t('task.selectRecursiveDict')" width="800px" @open="handleRecursiveDictDialogOpen">
+    <el-dialog v-model="recursiveDictSelectDialogVisible" :title="$t('task.selectRecursiveDict')" width="800px" append-to-body @open="handleRecursiveDictDialogOpen">
       <el-table 
         ref="recursiveDictTableRef"
         :data="recursiveDictList" 
@@ -864,7 +864,7 @@
     </el-dialog>
 
     <!-- POC选择对话框 -->
-    <el-dialog v-model="pocSelectDialogVisible" :title="$t('task.selectPoc')" width="1260px" @open="handlePocDialogOpen">
+    <el-dialog v-model="pocSelectDialogVisible" :title="$t('task.selectPoc')" width="1260px" append-to-body @open="handlePocDialogOpen">
       <div class="poc-select-container">
         <!-- 左侧：POC列表 -->
         <div class="poc-select-left">
@@ -906,7 +906,7 @@
                     <el-tag :type="getSeverityType(row.severity)" size="small">{{ row.severity }}</el-tag>
                   </template>
                 </el-table-column>
-                <el-table-column :label="$t('common.operation')" width="60" fixed="right">
+                <el-table-column :label="$t('common.operation')" width="60">
                   <template #default="{ row }">
                     <el-button type="primary" link size="small" @click="viewPocContent(row, 'nuclei')">{{ $t('common.view') }}</el-button>
                   </template>
@@ -961,7 +961,7 @@
                     <el-tag :type="getSeverityType(row.severity)" size="small">{{ row.severity }}</el-tag>
                   </template>
                 </el-table-column>
-                <el-table-column :label="$t('common.operation')" width="60" fixed="right">
+                <el-table-column :label="$t('common.operation')" width="60">
                   <template #default="{ row }">
                     <el-button type="primary" link size="small" @click="viewPocContent(row, 'custom')">{{ $t('common.view') }}</el-button>
                   </template>
@@ -1034,7 +1034,7 @@
     </el-dialog>
 
     <!-- 查看POC内容对话框 -->
-    <el-dialog v-model="pocContentDialogVisible" :title="pocContentTitle" width="800px">
+    <el-dialog v-model="pocContentDialogVisible" :title="pocContentTitle" width="800px" append-to-body>
       <el-descriptions :column="2" border size="small" style="margin-bottom: 15px">
         <el-descriptions-item :label="$t('task.templateId')">{{ currentViewPoc.id || currentViewPoc.templateId }}</el-descriptions-item>
         <el-descriptions-item :label="$t('common.name')">{{ currentViewPoc.name }}</el-descriptions-item>
@@ -1075,7 +1075,7 @@ import {
   validateCronSpec 
 } from '@/api/crontask'
 import { getTaskList } from '@/api/task'
-import { getNucleiTemplateList, getCustomPocList } from '@/api/poc'
+import { getNucleiTemplateList, getCustomPocList, getNucleiTemplateDetail } from '@/api/poc'
 import { getDirScanDictEnabledList } from '@/api/dirscan'
 import { getSubdomainDictEnabledList } from '@/api/subdomain'
 
@@ -1734,8 +1734,9 @@ async function loadData() {
     })
     // 调试日志已移除
     if (res.code === 0) {
-      tableData.value = res.data?.list || []
-      pagination.total = res.data?.total || 0
+      const data = res.data || res
+      tableData.value = data.list || []
+      pagination.total = data.total || 0
     } else {
       console.error('loadCronTaskFailed:', res.msg)
     }
@@ -1753,7 +1754,7 @@ async function handleDictDialogOpen() {
   try {
     const res = await getDirScanDictEnabledList()
     if (res.code === 0) {
-      dictList.value = res.data || []
+      dictList.value = res.list || res.data || []
       nextTick(() => {
         if (dictTableRef.value && form.dirscanDictIds) {
           dictList.value.forEach(row => {
@@ -1765,7 +1766,6 @@ async function handleDictDialogOpen() {
       })
     }
   } catch (e) {} finally { dictLoading.value = false }
-  dictSelectDialogVisible.value = true
 }
 
 async function handleSubdomainDictDialogOpen() {
@@ -1773,7 +1773,7 @@ async function handleSubdomainDictDialogOpen() {
   try {
     const res = await getSubdomainDictEnabledList()
     if (res.code === 0) {
-      subdomainDictList.value = res.data || []
+      subdomainDictList.value = res.list || res.data || []
       nextTick(() => {
         if (subdomainDictTableRef.value && form.subdomainDictIds) {
           subdomainDictList.value.forEach(row => {
@@ -1785,7 +1785,6 @@ async function handleSubdomainDictDialogOpen() {
       })
     }
   } catch (e) {} finally { subdomainDictLoading.value = false }
-  subdomainDictSelectDialogVisible.value = true
 }
 
 async function handleRecursiveDictDialogOpen() {
@@ -1793,7 +1792,7 @@ async function handleRecursiveDictDialogOpen() {
   try {
     const res = await getSubdomainDictEnabledList()
     if (res.code === 0) {
-      recursiveDictList.value = res.data || []
+      recursiveDictList.value = res.list || res.data || []
       nextTick(() => {
         if (recursiveDictTableRef.value && form.recursiveDictIds) {
           recursiveDictList.value.forEach(row => {
@@ -1805,7 +1804,6 @@ async function handleRecursiveDictDialogOpen() {
       })
     }
   } catch (e) {} finally { recursiveDictLoading.value = false }
-  recursiveDictSelectDialogVisible.value = true
 }
 
 async function loadNucleiTemplatesForSelect() {
@@ -2194,8 +2192,9 @@ async function loadEditSelectionNames() {
   if (form.dirscanDictIds.length > 0) {
     try {
       const res = await getDirScanDictEnabledList()
-      if (res.code === 0 && res.data) {
-        form.dirscanDicts = res.data.filter(d => form.dirscanDictIds.includes(d.id))
+      if (res.code === 0) {
+        const list = res.list || res.data || []
+        form.dirscanDicts = list.filter(d => form.dirscanDictIds.includes(d.id))
       }
     } catch (e) {
       console.error('loadDirScanDictNamesFailed', e)
@@ -2205,8 +2204,9 @@ async function loadEditSelectionNames() {
   if (form.subdomainDictIds.length > 0) {
     try {
       const res = await getSubdomainDictEnabledList()
-      if (res.code === 0 && res.data) {
-        form.subdomainDicts = res.data.filter(d => form.subdomainDictIds.includes(d.id))
+      if (res.code === 0) {
+        const list = res.list || res.data || []
+        form.subdomainDicts = list.filter(d => form.subdomainDictIds.includes(d.id))
       }
     } catch (e) {
       console.error('loadSubdomainDictNamesFailed', e)
@@ -2216,8 +2216,9 @@ async function loadEditSelectionNames() {
   if (form.recursiveDictIds.length > 0) {
     try {
       const res = await getSubdomainDictEnabledList()
-      if (res.code === 0 && res.data) {
-        form.recursiveDicts = res.data.filter(d => form.recursiveDictIds.includes(d.id))
+      if (res.code === 0) {
+        const list = res.list || res.data || []
+        form.recursiveDicts = list.filter(d => form.recursiveDictIds.includes(d.id))
       }
     } catch (e) {
       console.error('loadRecursiveDictNamesFailed', e)
@@ -2314,9 +2315,30 @@ function removeCustomPoc(id) {
   }
 }
 
-function viewPocContent(row, type) {
-  currentViewPoc.value = { name: row.name, content: row.content || "Content preview not loaded." }
+async function viewPocContent(row, type) {
+  pocContentTitle.value = type === 'nuclei' ? t('task.defaultTemplateContent') : t('task.customPocContent')
+  currentViewPoc.value = { ...row, content: row.content || '加载中...' }
   pocContentDialogVisible.value = true
+  if (type !== 'nuclei' || row.content) return
+
+  pocContentLoading.value = true
+  try {
+    const res = await getNucleiTemplateDetail({ templateId: row.id })
+    if (res.code === 0 && res.data) {
+      currentViewPoc.value = {
+        ...currentViewPoc.value,
+        ...res.data,
+        content: res.data.content || '# YAML内容为空'
+      }
+    } else {
+      currentViewPoc.value.content = res.msg || t('task.getContentFailed')
+    }
+  } catch (e) {
+    console.error('Get POC content failed:', e)
+    currentViewPoc.value.content = t('task.getContentFailed')
+  } finally {
+    pocContentLoading.value = false
+  }
 }
 
 function copyPocContent() { 

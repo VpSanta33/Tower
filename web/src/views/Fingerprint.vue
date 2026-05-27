@@ -85,7 +85,7 @@
                 <el-switch v-model="row.enabled" @change="handleToggleEnabled(row)" size="small" />
               </template>
             </el-table-column>
-            <el-table-column :label="$t('fingerprint.operation')" width="120" fixed="right">
+            <el-table-column :label="$t('fingerprint.operation')" width="120">
               <template #default="{ row }">
                 <el-button type="success" link size="small" @click="showValidateDialog(row)">{{ $t('fingerprint.validate') }}</el-button>
                 <el-button type="primary" link size="small" @click="showFingerprintDetail(row)">{{ $t('fingerprint.view') }}</el-button>
@@ -488,7 +488,7 @@
     </el-tabs>
 
     <!-- 指纹详情对话框 -->
-    <el-dialog v-model="detailDialogVisible" :title="currentFingerprint.name || $t('fingerprint.fingerprintDetail')" width="900px" top="5vh">
+    <el-dialog v-model="detailDialogVisible" :title="currentFingerprint.name || $t('fingerprint.fingerprintDetail')" width="900px" top="5vh" append-to-body>
       <el-descriptions :column="2" border size="small" style="margin-bottom: 15px">
         <el-descriptions-item :label="$t('fingerprint.appName')">{{ currentFingerprint.name }}</el-descriptions-item>
         <el-descriptions-item :label="$t('fingerprint.category')">{{ currentFingerprint.category }}</el-descriptions-item>
@@ -594,7 +594,7 @@
     </el-dialog>
 
     <!-- 自定义指纹编辑对话框 -->
-    <el-dialog v-model="formDialogVisible" :title="fingerprintForm.id ? $t('fingerprint.editFingerprint') : $t('fingerprint.addFingerprintTitle')" width="800px">
+    <el-dialog v-model="formDialogVisible" :title="fingerprintForm.id ? $t('fingerprint.editFingerprint') : $t('fingerprint.addFingerprintTitle')" width="800px" append-to-body>
       <el-form ref="fingerprintFormRef" :model="fingerprintForm" :rules="fingerprintRules" label-width="100px">
         <el-row :gutter="20">
           <el-col :span="12">
@@ -686,7 +686,7 @@
     </el-dialog>
 
     <!-- 导入指纹对话框（自定义指纹） -->
-    <el-dialog v-model="importDialogVisible" :title="$t('fingerprint.importCustomFingerprint')" width="700px">
+    <el-dialog v-model="importDialogVisible" :title="$t('fingerprint.importCustomFingerprint')" width="700px" append-to-body>
       <el-alert type="info" :closable="false" style="margin-bottom: 15px">
         <template #title>{{ $t('fingerprint.supportMultiFormat') }}</template>
         <template #default>
@@ -742,7 +742,7 @@
     </el-dialog>
 
     <!-- 导入内置指纹对话框（Wappalyzer格式） -->
-    <el-dialog v-model="builtinImportDialogVisible" :title="$t('fingerprint.importBuiltinFingerprint')" width="600px">
+    <el-dialog v-model="builtinImportDialogVisible" :title="$t('fingerprint.importBuiltinFingerprint')" width="600px" append-to-body>
       <el-alert type="info" :closable="false" style="margin-bottom: 15px">
         <template #title>{{ $t('fingerprint.wappalyzerDataFormat') }}</template>
         <template #default>
@@ -784,7 +784,7 @@
     </el-dialog>
 
     <!-- 指纹验证对话框 -->
-    <el-dialog v-model="validateDialogVisible" :title="$t('fingerprint.validateFingerprint')" width="600px">
+    <el-dialog v-model="validateDialogVisible" :title="$t('fingerprint.validateFingerprint')" width="600px" append-to-body>
       <el-form label-width="80px">
         <el-form-item :label="$t('fingerprint.fingerprintName')">
           <el-input :value="validateFingerprint.name" disabled />
@@ -808,7 +808,7 @@
     </el-dialog>
 
     <!-- 批量验证对话框 -->
-    <el-dialog v-model="batchValidateDialogVisible" :title="$t('fingerprint.batchValidateFingerprint')" width="800px">
+    <el-dialog v-model="batchValidateDialogVisible" :title="$t('fingerprint.batchValidateFingerprint')" width="800px" append-to-body>
       <el-form label-width="80px">
         <el-form-item :label="$t('fingerprint.targetUrl')">
           <el-input v-model="batchValidateUrl" :placeholder="$t('fingerprint.targetUrlPlaceholder')" />
@@ -859,7 +859,7 @@
     </el-dialog>
 
     <!-- HTTP服务映射编辑对话框 -->
-    <el-dialog v-model="httpServiceMappingDialogVisible" :title="httpServiceMappingForm.id ? $t('fingerprint.editMapping') : $t('fingerprint.addMappingTitle')" width="500px">
+    <el-dialog v-model="httpServiceMappingDialogVisible" :title="httpServiceMappingForm.id ? $t('fingerprint.editMapping') : $t('fingerprint.addMappingTitle')" width="500px" append-to-body>
       <el-form ref="httpServiceMappingFormRef" :model="httpServiceMappingForm" :rules="httpServiceMappingRules" label-width="100px">
         <el-form-item :label="$t('fingerprint.serviceName')" prop="serviceName">
           <el-input v-model="httpServiceMappingForm.serviceName" :placeholder="$t('fingerprint.serviceNamePlaceholder')" />
@@ -884,7 +884,7 @@
     </el-dialog>
 
     <!-- 匹配现有资产对话框 -->
-    <el-dialog v-model="matchAssetsDialogVisible" :title="$t('fingerprint.matchExistingAssets')" width="900px">
+    <el-dialog v-model="matchAssetsDialogVisible" :title="$t('fingerprint.matchExistingAssets')" width="900px" append-to-body>
       <el-descriptions :column="2" border size="small" style="margin-bottom: 15px">
         <el-descriptions-item :label="$t('fingerprint.fingerprintName')">{{ matchAssetsFingerprint.name }}</el-descriptions-item>
         <el-descriptions-item :label="$t('fingerprint.matchRules')">
@@ -943,7 +943,7 @@
     </el-dialog>
 
     <!-- 主动指纹详情对话框 -->
-    <el-dialog v-model="activeFingerprintDetailDialogVisible" :title="currentActiveFingerprint.name || $t('fingerprint.activeFingerprintDetail')" width="800px">
+    <el-dialog v-model="activeFingerprintDetailDialogVisible" :title="currentActiveFingerprint.name || $t('fingerprint.activeFingerprintDetail')" width="800px" append-to-body>
       <el-descriptions :column="2" border size="small" style="margin-bottom: 15px">
         <el-descriptions-item :label="$t('fingerprint.appName')">{{ currentActiveFingerprint.name }}</el-descriptions-item>
         <el-descriptions-item :label="$t('fingerprint.status')">
@@ -996,7 +996,7 @@
     </el-dialog>
 
     <!-- 主动指纹编辑对话框 -->
-    <el-dialog v-model="activeFingerprintFormDialogVisible" :title="activeFingerprintForm.id ? $t('fingerprint.editActiveFingerprint') : $t('fingerprint.addActiveFingerprint')" width="800px">
+    <el-dialog v-model="activeFingerprintFormDialogVisible" :title="activeFingerprintForm.id ? $t('fingerprint.editActiveFingerprint') : $t('fingerprint.addActiveFingerprint')" width="800px" append-to-body>
       <el-form ref="activeFingerprintFormRef" :model="activeFingerprintForm" :rules="activeFingerprintRules" label-width="100px">
         <el-form-item :label="$t('fingerprint.appName')" prop="name">
           <div style="display: flex; gap: 10px; width: 100%;">
@@ -1100,7 +1100,7 @@
     </el-dialog>
 
     <!-- 主动指纹导入对话框 -->
-    <el-dialog v-model="activeImportDialogVisible" :title="$t('fingerprint.importActiveFingerprint')" width="700px">
+    <el-dialog v-model="activeImportDialogVisible" :title="$t('fingerprint.importActiveFingerprint')" width="700px" append-to-body>
       <el-alert type="info" :closable="false" style="margin-bottom: 15px">
         <template #default>
           <div style="font-size: 12px">
@@ -1145,7 +1145,7 @@ SpringBoot-Actuator:
     </el-dialog>
 
     <!-- HTTP服务映射导入对话框 -->
-    <el-dialog v-model="httpServiceImportDialogVisible" :title="$t('fingerprint.importHttpServiceConfig')" width="700px">
+    <el-dialog v-model="httpServiceImportDialogVisible" :title="$t('fingerprint.importHttpServiceConfig')" width="700px" append-to-body>
       <el-alert type="info" :closable="false" style="margin-bottom: 15px">
         <template #default>
           <div>{{ $t('fingerprint.httpServiceImportTip') }}</div>
@@ -1180,7 +1180,7 @@ SpringBoot-Actuator:
     </el-dialog>
 
     <!-- 主动指纹验证对话框 -->
-    <el-dialog v-model="activeValidateDialogVisible" :title="$t('fingerprint.validateActiveFingerprint')" width="800px">
+    <el-dialog v-model="activeValidateDialogVisible" :title="$t('fingerprint.validateActiveFingerprint')" width="800px" append-to-body>
       <el-form label-width="100px">
         <el-form-item :label="$t('fingerprint.fingerprintName')">
           <el-input :value="activeValidateFingerprint.name" disabled />
@@ -1934,7 +1934,7 @@ function showFingerprintForm(row = null) {
 }
 
 async function handleSaveFingerprint() {
-  await fingerprintFormRef.value.validate()
+  try { await fingerprintFormRef.value.validate() } catch { return }
   // 处理主动指纹路径
   if (fingerprintForm.type === 'active' && fingerprintForm.activePathsText) {
     fingerprintForm.activePaths = fingerprintForm.activePathsText
@@ -2325,7 +2325,7 @@ function showHttpServiceMappingForm(row = null) {
 
 // 保存HTTP服务映射
 async function handleSaveHttpServiceMapping() {
-  await httpServiceMappingFormRef.value.validate()
+  try { await httpServiceMappingFormRef.value.validate() } catch { return }
   const res = await saveHttpServiceMapping(httpServiceMappingForm)
   if (res.code === 0) {
     ElMessage.success(t('fingerprint.saveSuccess'))
@@ -2681,7 +2681,7 @@ function handleEditRelatedPassive(row) {
 
 // 保存关联被动指纹
 async function handleSaveRelatedPassive() {
-  await relatedPassiveFormRef.value.validate()
+  try { await relatedPassiveFormRef.value.validate() } catch { return }
   
   const res = await saveFingerprint({
     id: relatedPassiveForm.id,
@@ -2703,7 +2703,7 @@ async function handleSaveRelatedPassive() {
 
 // 保存主动指纹
 async function handleSaveActiveFingerprint() {
-  await activeFingerprintFormRef.value.validate()
+  try { await activeFingerprintFormRef.value.validate() } catch { return }
   
   // 解析路径
   const paths = activeFingerprintForm.pathsText

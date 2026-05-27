@@ -94,7 +94,7 @@ export function useAssetView(options) {
       try {
         const res = await request.post(`${apiPrefix}/list`, { ...proTableRef.value?.searchForm, page: 1, pageSize: 10000 })
         if (res.code === 0) {
-          data = res.list || []
+          data = res.list || res.data?.list || []
         } else {
           ElMessage.error(t('asset.getDataFailed'))
           return
