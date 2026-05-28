@@ -825,7 +825,9 @@ async function handleWorkspaceSubmit() {
 }
 
 async function handleDeleteWorkspace(row) {
-  await ElMessageBox.confirm(t('workspace.confirmDeleteWorkspace'), t('common.tip'), { type: 'warning' })
+  try {
+    await ElMessageBox.confirm(t('workspace.confirmDeleteWorkspace'), t('common.tip'), { type: 'warning' })
+  } catch { return }
   const res = await request.post('/workspace/delete', { id: row.id })
   if (res.code === 0) {
     ElMessage.success(t('common.deleteSuccess'))
@@ -974,7 +976,9 @@ async function handleOrgSubmit() {
 }
 
 async function handleDeleteOrg(row) {
-  await ElMessageBox.confirm(t('organization.confirmDeleteOrg'), t('common.tip'), { type: 'warning' })
+  try {
+    await ElMessageBox.confirm(t('organization.confirmDeleteOrg'), t('common.tip'), { type: 'warning' })
+  } catch { return }
   const res = await request.post('/organization/delete', { id: row.id })
   const data = res.data || res
   if (data.code === 0) {

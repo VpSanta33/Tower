@@ -56,6 +56,7 @@ func DefaultConfig() Config {
 // CircuitBreaker 熔断器
 type CircuitBreaker struct {
 	config Config
+	name   string
 
 	state           State
 	failureCount    int
@@ -77,9 +78,10 @@ func New(cfg Config) *CircuitBreaker {
 	}
 }
 
-// NewWithName 创建带名称的熔断器
+// NewWithName 创建带名称的熔断器（name 目前仅用于日志/标识，预留扩展）
 func NewWithName(name string, cfg Config) *CircuitBreaker {
 	cb := New(cfg)
+	cb.name = name
 	return cb
 }
 

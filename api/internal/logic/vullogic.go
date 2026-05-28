@@ -79,12 +79,13 @@ func (l *VulListLogic) VulList(req *types.VulListReq, workspaceId string) (resp 
 	if len(wsIds) > 1 || workspaceId == "" || workspaceId == "all" {
 		// 收集所有工作空间的数据
 		var allVuls []model.Vul
+		maxPerWorkspace := 10000
 		for _, wsId := range wsIds {
 			vulModel := l.svcCtx.GetVulModel(wsId)
 			wsTotal, _ := vulModel.Count(l.ctx, filter)
 			total += wsTotal
 
-			wsVuls, _ := vulModel.Find(l.ctx, filter, 0, 0)
+			wsVuls, _ := vulModel.Find(l.ctx, filter, 1, maxPerWorkspace)
 			allVuls = append(allVuls, wsVuls...)
 		}
 

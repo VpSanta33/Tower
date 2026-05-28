@@ -204,11 +204,14 @@ function getSeverityLabel(severity) {
 }
 
 async function showDetail(row) {
+  currentVul.value = row
+  detailVisible.value = true
   try {
     const res = await request.post('/vul/detail', { id: row.id })
-    currentVul.value = res.code === 0 && res.data ? res.data : row
-  } catch (e) { currentVul.value = row }
-  detailVisible.value = true
+    if (res.code === 0 && res.data) {
+      currentVul.value = res.data
+    }
+  } catch (e) { /* keep row as fallback */ }
 }
 
 async function handleDelete(row) {

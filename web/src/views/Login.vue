@@ -185,7 +185,7 @@ const resetRules = computed(() => {
 })
 
 async function handleLogin() {
-  await formRef.value.validate()
+  try { await formRef.value.validate() } catch { return }
   loading.value = true
   try {
     const res = await userStore.login(form)
@@ -205,7 +205,7 @@ async function handleLogin() {
 }
 
 async function handleResetSubmit() {
-  await resetFormRef.value.validate()
+  try { await resetFormRef.value.validate() } catch { return }
   resetLoading.value = true
   try {
     const res = await firstLoginResetPassword({

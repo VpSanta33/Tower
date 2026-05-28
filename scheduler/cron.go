@@ -289,6 +289,8 @@ func (m *CronManager) DisableTask(ctx context.Context, taskId string) error {
 
 // GetTasks 获取所有定时任务
 func (m *CronManager) GetTasks() []*CronTask {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	tasks := make([]*CronTask, 0, len(m.tasks))
 	for _, task := range m.tasks {
 		tasks = append(tasks, task)
@@ -356,9 +358,14 @@ func (m *CronManager) startTask(task *CronTask) {
 func (m *CronManager) executeTask(task *CronTask) {
 	ctx := context.Background()
 
-	// === 阶段1: 加锁仅获取任务ID，快速释放锁 ===
+	// === 阶段1: 加锁获取任务ID 并再次确认仍为 enable（修复 Cron Race） ===
+	// 调度回调与 DisableTask 之间存在窗口期，执行前再确认状态避免误触发
 	m.mu.Lock()
 	taskId := task.Id
+	if current, ok := m.tasks[taskId]; !ok || current.Status != "enable" {
+		m.mu.Unlock()
+		return
+	}
 	m.mu.Unlock()
 
 	// === 阶段2: 无锁状态下做IO操作（读取最新配置） ===
@@ -445,8 +452,12 @@ func (m *CronManager) executeTask(task *CronTask) {
 	// 计算下次执行时间
 	switch currentTask.ScheduleType {
 	case "cron":
-		schedule, _ := cronParser.Parse(currentTask.CronSpec)
-		currentTask.NextRunTime = schedule.Next(time.Now()).Local().Format("2006-01-02 15:04:05")
+		schedule, err := cronParser.Parse(currentTask.CronSpec)
+		if err != nil {
+			logx.Errorf("[CronManager] Invalid cron spec for task %s: %v, skipping next run time calculation", currentTask.Id, err)
+		} else {
+			currentTask.NextRunTime = schedule.Next(time.Now()).Local().Format("2006-01-02 15:04:05")
+		}
 	case "once":
 		// 一次性任务执行后禁用
 		currentTask.Status = "disable"
@@ -648,6 +659,9 @@ func (m *CronManager) StartMessageSubscriber(ctx context.Context) {
 
 		for {
 			pubsub := m.rdb.Subscribe(ctx, "tower:cron:reload", "tower:cron:remove", "tower:cron:runnow")
+
+			// Reset retry delay on successful reconnect
+			retryDelay = 5 * time.Second
 
 			ch := pubsub.Channel()
 		subscribeLoop:

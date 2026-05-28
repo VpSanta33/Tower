@@ -683,6 +683,10 @@ type MainTaskDeleteReq struct {
 	WorkspaceId string `json:"workspaceId,optional"` // 任务所属工作空间ID
 }
 
+type MainTaskDetailReq struct {
+	Id string `json:"id"`
+}
+
 type MainTaskBatchDeleteReq struct {
 	Ids         []string `json:"ids"`
 	WorkspaceId string   `json:"workspaceId,optional"` // 任务所属工作空间ID

@@ -101,6 +101,16 @@ func (l *SaveVulResultLogic) SaveVulResult(in *pb.SaveVulResultReq) (*pb.SaveVul
 		workspaceId = "default"
 	}
 
+	// 修复 R1：拒绝 worker 提交到不存在的 workspace
+	if !l.svcCtx.IsValidWorkspace(l.ctx, workspaceId) {
+		l.Logger.Errorf("SaveVulResult rejected: invalid workspaceId=%s", workspaceId)
+		return &pb.SaveVulResultResp{
+			Success: false,
+			Message: "invalid workspaceId",
+			Total:   0,
+		}, nil
+	}
+
 	vulModel := l.svcCtx.GetVulModel(workspaceId)
 	assetModel := l.svcCtx.GetAssetModel(workspaceId)
 

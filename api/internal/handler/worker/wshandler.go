@@ -15,6 +15,7 @@ import (
 
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsutil"
+	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"github.com/zeromicro/go-zero/core/logx"
 )
@@ -330,7 +331,7 @@ func (wc *WorkerConnection) GetLastPing() time.Time {
 // RequestWorkerInfo 请求Worker信息（同步等待响应）
 func (wc *WorkerConnection) RequestWorkerInfo(timeout time.Duration) (*WorkerInfoPayload, error) {
 	// 生成唯一请求ID
-	requestId := fmt.Sprintf("%d", time.Now().UnixNano())
+	requestId := uuid.NewString()
 
 	// 创建响应通道
 	respChan := make(chan *WorkerInfoResponse, 1)
@@ -380,7 +381,7 @@ func (wc *WorkerConnection) HandleWorkerInfoResponse(payload json.RawMessage) {
 
 // RequestFileList 请求文件列表（同步等待响应）
 func (wc *WorkerConnection) RequestFileList(path string, timeout time.Duration) (*FileListResponse, error) {
-	requestId := fmt.Sprintf("%d", time.Now().UnixNano())
+	requestId := uuid.NewString()
 
 	respChan := make(chan *FileListResponse, 1)
 	wc.pendingRequests.Store("file_list_"+requestId, respChan)
@@ -421,7 +422,7 @@ func (wc *WorkerConnection) HandleFileListResponse(payload json.RawMessage) {
 
 // RequestFileUpload 请求文件上传（同步等待响应）
 func (wc *WorkerConnection) RequestFileUpload(path, data string, timeout time.Duration) (*FileUploadResponse, error) {
-	requestId := fmt.Sprintf("%d", time.Now().UnixNano())
+	requestId := uuid.NewString()
 
 	respChan := make(chan *FileUploadResponse, 1)
 	wc.pendingRequests.Store("file_upload_"+requestId, respChan)
@@ -462,7 +463,7 @@ func (wc *WorkerConnection) HandleFileUploadResponse(payload json.RawMessage) {
 
 // RequestFileDownload 请求文件下载（同步等待响应）
 func (wc *WorkerConnection) RequestFileDownload(path string, timeout time.Duration) (*FileDownloadResponse, error) {
-	requestId := fmt.Sprintf("%d", time.Now().UnixNano())
+	requestId := uuid.NewString()
 
 	respChan := make(chan *FileDownloadResponse, 1)
 	wc.pendingRequests.Store("file_download_"+requestId, respChan)
@@ -503,7 +504,7 @@ func (wc *WorkerConnection) HandleFileDownloadResponse(payload json.RawMessage) 
 
 // RequestFileDelete 请求文件删除（同步等待响应）
 func (wc *WorkerConnection) RequestFileDelete(path string, timeout time.Duration) (*FileDeleteResponse, error) {
-	requestId := fmt.Sprintf("%d", time.Now().UnixNano())
+	requestId := uuid.NewString()
 
 	respChan := make(chan *FileDeleteResponse, 1)
 	wc.pendingRequests.Store("file_delete_"+requestId, respChan)
@@ -544,7 +545,7 @@ func (wc *WorkerConnection) HandleFileDeleteResponse(payload json.RawMessage) {
 
 // RequestFileMkdir 请求创建目录（同步等待响应）
 func (wc *WorkerConnection) RequestFileMkdir(path string, timeout time.Duration) (*FileMkdirResponse, error) {
-	requestId := fmt.Sprintf("%d", time.Now().UnixNano())
+	requestId := uuid.NewString()
 
 	respChan := make(chan *FileMkdirResponse, 1)
 	wc.pendingRequests.Store("file_mkdir_"+requestId, respChan)
@@ -587,7 +588,7 @@ func (wc *WorkerConnection) HandleFileMkdirResponse(payload json.RawMessage) {
 
 // RequestTerminalOpen 请求打开终端（同步等待响应）
 func (wc *WorkerConnection) RequestTerminalOpen(sessionId string, cols, rows int, timeout time.Duration) (*TerminalOpenResponse, error) {
-	requestId := fmt.Sprintf("%d", time.Now().UnixNano())
+	requestId := uuid.NewString()
 
 	respChan := make(chan *TerminalOpenResponse, 1)
 	wc.pendingRequests.Store("terminal_open_"+requestId, respChan)
@@ -628,7 +629,7 @@ func (wc *WorkerConnection) HandleTerminalOpenResponse(payload json.RawMessage) 
 
 // RequestTerminalClose 请求关闭终端（同步等待响应）
 func (wc *WorkerConnection) RequestTerminalClose(sessionId string, timeout time.Duration) (*TerminalCloseResponse, error) {
-	requestId := fmt.Sprintf("%d", time.Now().UnixNano())
+	requestId := uuid.NewString()
 
 	respChan := make(chan *TerminalCloseResponse, 1)
 	wc.pendingRequests.Store("terminal_close_"+requestId, respChan)
@@ -669,7 +670,7 @@ func (wc *WorkerConnection) HandleTerminalCloseResponse(payload json.RawMessage)
 
 // RequestTerminalInput 请求终端输入（同步等待响应）
 func (wc *WorkerConnection) RequestTerminalInput(sessionId, data, command string, timeout time.Duration) (*TerminalInputResponse, error) {
-	requestId := fmt.Sprintf("%d", time.Now().UnixNano())
+	requestId := uuid.NewString()
 
 	respChan := make(chan *TerminalInputResponse, 1)
 	wc.pendingRequests.Store("terminal_input_"+requestId, respChan)
@@ -710,7 +711,7 @@ func (wc *WorkerConnection) HandleTerminalInputResponse(payload json.RawMessage)
 
 // RequestTerminalResize 请求终端大小调整（同步等待响应）
 func (wc *WorkerConnection) RequestTerminalResize(sessionId string, cols, rows int, timeout time.Duration) (*TerminalResizeResponse, error) {
-	requestId := fmt.Sprintf("%d", time.Now().UnixNano())
+	requestId := uuid.NewString()
 
 	respChan := make(chan *TerminalResizeResponse, 1)
 	wc.pendingRequests.Store("terminal_resize_"+requestId, respChan)
@@ -1045,7 +1046,8 @@ func handleWebSocketConnection(ctx context.Context, conn net.Conn, svcCtx *svc.S
 	// 注册连接
 	wsHandler.connections.Store(workerName, wc)
 	defer func() {
-		wsHandler.connections.Delete(workerName)
+		// 仅当 map 中仍为当前连接时才删除（修复 #3：避免后续重连被旧 goroutine 误删）
+		wsHandler.connections.CompareAndDelete(workerName, wc)
 		wc.Close()
 		logx.Infof("[WorkerWS] Worker disconnected: %s", workerName)
 	}()
@@ -1167,8 +1169,8 @@ func readPump(ctx context.Context, conn net.Conn, wc *WorkerConnection, svcCtx *
 			continue
 		}
 
-		// 调试：打印收到的消息类型
-		logx.Infof("[WorkerWS] Received message from %s: type=%s", wc.workerName, msg.Type)
+		// 调试日志降级为 Debug，避免高频任务时日志爆炸（修复 #19）
+		logx.Debugf("[WorkerWS] Received message from %s: type=%s", wc.workerName, msg.Type)
 
 		// 路由消息
 		handleMessage(ctx, wc, svcCtx, &msg)
@@ -1180,6 +1182,14 @@ func writePump(ctx context.Context, conn net.Conn, wc *WorkerConnection) {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
+	writeWithDeadline := func(data []byte) error {
+		// 设置写超时，避免慢/僵死客户端阻塞 goroutine（修复 #11）
+		_ = conn.SetWriteDeadline(time.Now().Add(15 * time.Second))
+		err := wsutil.WriteServerMessage(conn, ws.OpText, data)
+		_ = conn.SetWriteDeadline(time.Time{})
+		return err
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -1187,7 +1197,7 @@ func writePump(ctx context.Context, conn net.Conn, wc *WorkerConnection) {
 		case <-wc.closeChan:
 			return
 		case data := <-wc.sendChan:
-			if err := wsutil.WriteServerMessage(conn, ws.OpText, data); err != nil {
+			if err := writeWithDeadline(data); err != nil {
 				logx.Errorf("[WorkerWS] Write error for %s: %v", wc.workerName, err)
 				return
 			}
@@ -1195,7 +1205,7 @@ func writePump(ctx context.Context, conn net.Conn, wc *WorkerConnection) {
 			// 发送PING保活
 			msg := &WSMessage{Type: WSTypePing}
 			data, _ := json.Marshal(msg)
-			if err := wsutil.WriteServerMessage(conn, ws.OpText, data); err != nil {
+			if err := writeWithDeadline(data); err != nil {
 				logx.Errorf("[WorkerWS] Ping error for %s: %v", wc.workerName, err)
 				return
 			}

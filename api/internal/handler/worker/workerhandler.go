@@ -188,7 +188,10 @@ func WorkerLogsHistoryHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 			Level     string `json:"level"`     // 过滤日志级别
 			NewerThan string `json:"newerThan"` // 获取比此ID更新的日志（用于实时更新）
 		}
-		json.NewDecoder(r.Body).Decode(&req)
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			response.ParamError(w, err.Error())
+			return
+		}
 		if req.Limit <= 0 {
 			req.Limit = 100
 		}
@@ -314,7 +317,10 @@ func WorkerLogsExportHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 			Worker string `json:"worker"` // 过滤指定 Worker
 			Level  string `json:"level"`  // 过滤日志级别
 		}
-		json.NewDecoder(r.Body).Decode(&req)
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			response.ParamError(w, err.Error())
+			return
+		}
 		if req.Format == "" {
 			req.Format = "json"
 		}

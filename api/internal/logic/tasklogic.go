@@ -20,6 +20,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/zeromicro/go-zero/core/logx"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 type MainTaskListLogic struct {
@@ -106,8 +107,14 @@ func (l *MainTaskListLogic) MainTaskList(req *types.MainTaskListReq, workspaceId
 			go func(workspaceId string) {
 				defer wg.Done()
 				taskModel := l.svcCtx.GetMainTaskModel(workspaceId)
-				wsTotal, _ := taskModel.Count(ctx, filter)
-				wsTasks, _ := taskModel.Find(ctx, filter, 0, 0)
+				wsTotal, err := taskModel.Count(ctx, filter)
+				if err != nil {
+					logx.Errorf("MainTaskList: Count failed for workspace=%s, error=%v", workspaceId, err)
+				}
+				wsTasks, err := taskModel.Find(ctx, filter, 0, 0)
+				if err != nil {
+					logx.Errorf("MainTaskList: Find failed for workspace=%s, error=%v", workspaceId, err)
+				}
 				resultChan <- wsResult{tasks: wsTasks, count: wsTotal, wsId: workspaceId}
 			}(ws)
 		}
@@ -1414,19 +1421,22 @@ func (l *MainTaskUpdateLogic) MainTaskUpdate(req *types.MainTaskUpdateReq, works
 		return &types.BaseResp{Code: 400, Msg: "没有需要更新的字段"}, nil
 	}
 
-	// 再次检查状态（防止并发修改）
-	task, err = taskModel.FindById(l.ctx, req.Id)
+	// 使用原子更新：过滤条件包含预期状态，防止并发修改
+	oid, err := primitive.ObjectIDFromHex(req.Id)
 	if err != nil {
-		return &types.BaseResp{Code: 40001, Msg: "任务不存在"}, nil
+		return &types.BaseResp{Code: 40001, Msg: "无效的任务ID"}, nil
 	}
-	if task.Status != model.TaskStatusCreated {
-		return &types.BaseResp{Code: 40002, Msg: "任务状态已变更，无法编辑"}, nil
+	atomicFilter := bson.M{
+		"_id":    oid,
+		"status": model.TaskStatusCreated,
 	}
-
-	// 执行更新
-	if err := taskModel.Update(l.ctx, req.Id, update); err != nil {
+	result, err := taskModel.UpdateWithFilter(l.ctx, atomicFilter, update)
+	if err != nil {
 		l.Logger.Errorf("MainTaskUpdate: update failed, id=%s, error=%v", req.Id, err)
 		return &types.BaseResp{Code: 500, Msg: "更新任务失败"}, nil
+	}
+	if result.MatchedCount == 0 {
+		return &types.BaseResp{Code: 40002, Msg: "任务状态已变更，无法编辑"}, nil
 	}
 
 	l.Logger.Infof("MainTaskUpdate: task updated, id=%s, workspaceId=%s", req.Id, workspaceId)

@@ -74,6 +74,25 @@ func MainTaskDeleteHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 	}
 }
 
+// MainTaskDetailHandler 任务详情
+func MainTaskDetailHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req types.MainTaskDetailReq
+		if err := httpx.Parse(r, &req); err != nil {
+			response.ParamError(w, err.Error())
+			return
+		}
+
+		l := logic.NewMainTaskDetailLogic(r.Context(), svcCtx)
+		resp, err := l.MainTaskDetail(&req)
+		if err != nil {
+			response.Error(w, err)
+			return
+		}
+		httpx.OkJson(w, resp)
+	}
+}
+
 // MainTaskBatchDeleteHandler 批量删除任务
 func MainTaskBatchDeleteHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

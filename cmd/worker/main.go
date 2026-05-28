@@ -68,9 +68,9 @@ func validateInstallKey(apiServer, key, name string) error {
 			time.Sleep(time.Duration(i+1) * time.Second)
 			continue
 		}
-		defer resp.Body.Close()
 
 		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
 		var result struct {
 			Code  int    `json:"code"`
 			Msg   string `json:"msg"`

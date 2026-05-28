@@ -288,6 +288,12 @@ func NewUserFirstLoginResetPasswordLogic(ctx context.Context, svcCtx *svc.Servic
 }
 
 func (l *UserFirstLoginResetPasswordLogic) UserFirstLoginResetPassword(req *types.UserFirstLoginResetPasswordReq) (resp *types.BaseResp, err error) {
+	// 验证调用者身份：只允许用户重置自己的密码
+	callingUserId := middleware.GetUserId(l.ctx)
+	if callingUserId != req.Id {
+		return &types.BaseResp{Code: 403, Msg: "无权操作其他用户的密码"}, nil
+	}
+
 	// 验证新密码强度
 	if err := model.ValidatePasswordStrength(req.NewPassword); err != nil {
 		return &types.BaseResp{Code: 400, Msg: err.Error()}, nil

@@ -38,8 +38,8 @@ type BruteScanConfig struct {
 	stopChan chan struct{} `json:"-"` // 用于 StopOnFirst 跨服务停止信号
 }
 
-// Validate 验证 BruteScanConfig 配置
-func (c BruteScanConfig) Validate() error {
+// Validate 验证 BruteScanConfig 配置（指针接收器，确保修改生效）
+func (c *BruteScanConfig) Validate() error {
 	if c.Threads < 1 {
 		c.Threads = 10
 	}

@@ -453,6 +453,16 @@ func (m *AssetModel) RemoveLabel(ctx context.Context, id string, label string) e
 	return err
 }
 
+// UpdateMany 批量更新匹配条件的资产
+func (m *AssetModel) UpdateMany(ctx context.Context, filter bson.M, update bson.M) (int64, error) {
+	update["update_time"] = time.Now()
+	result, err := m.coll.UpdateMany(ctx, filter, bson.M{"$set": update})
+	if err != nil {
+		return 0, err
+	}
+	return result.ModifiedCount, nil
+}
+
 func (m *AssetModel) Delete(ctx context.Context, id string) error {
 	oid, err := primitive.ObjectIDFromHex(id)
 	if err != nil {

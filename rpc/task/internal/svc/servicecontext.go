@@ -3,6 +3,7 @@ package svc
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"tower/model"
@@ -28,6 +29,15 @@ type ServiceContext struct {
 	SubfinderProviderModel  *model.SubfinderProviderModel
 	NotifyConfigModel       *model.NotifyConfigModel
 	TaskRecoveryManager     *scheduler.TaskRecoveryManager // 任务恢复管理器
+
+	// workspaceCache: workspaceId -> 是否存在；TTL 60s（修复 R1）
+	workspaceCache   map[string]workspaceCacheEntry
+	workspaceCacheMu sync.RWMutex
+}
+
+type workspaceCacheEntry struct {
+	exists bool
+	expire time.Time
 }
 
 func NewServiceContext(c config.Config) (*ServiceContext, error) {
@@ -80,7 +90,37 @@ func NewServiceContext(c config.Config) (*ServiceContext, error) {
 		SubfinderProviderModel:  model.NewSubfinderProviderModel(mongoDB),
 		NotifyConfigModel:       model.NewNotifyConfigModel(mongoDB),
 		TaskRecoveryManager:     recoveryManager,
+		workspaceCache:          make(map[string]workspaceCacheEntry),
 	}, nil
+}
+
+// IsValidWorkspace 校验 workspaceId 是否合法（修复 R1）
+// 规则：空串或 "default" 视为合法（多租户默认空间）；其他 ID 必须在 workspace 集合中存在
+// 带 60s 缓存，避免高频写入打爆 MongoDB
+func (s *ServiceContext) IsValidWorkspace(ctx context.Context, id string) bool {
+	if id == "" || id == "default" {
+		return true
+	}
+
+	s.workspaceCacheMu.RLock()
+	if e, ok := s.workspaceCache[id]; ok && time.Now().Before(e.expire) {
+		s.workspaceCacheMu.RUnlock()
+		return e.exists
+	}
+	s.workspaceCacheMu.RUnlock()
+
+	exists := false
+	if ws, err := s.WorkspaceModel.FindById(ctx, id); err == nil && ws != nil && !ws.Id.IsZero() {
+		exists = true
+	}
+
+	s.workspaceCacheMu.Lock()
+	s.workspaceCache[id] = workspaceCacheEntry{
+		exists: exists,
+		expire: time.Now().Add(60 * time.Second),
+	}
+	s.workspaceCacheMu.Unlock()
+	return exists
 }
 
 func (s *ServiceContext) GetAssetModel(workspaceId string) *model.AssetModel {

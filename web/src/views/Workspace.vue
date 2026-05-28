@@ -119,7 +119,9 @@ async function handleSubmit() {
 }
 
 async function handleDelete(row) {
-  await ElMessageBox.confirm(t('workspace.confirmDeleteWorkspace'), t('common.tip'), { type: 'warning' })
+  try {
+    await ElMessageBox.confirm(t('workspace.confirmDeleteWorkspace'), t('common.tip'), { type: 'warning' })
+  } catch { return }
   const res = await request.post('/workspace/delete', { id: row.id })
   if (res.code === 0) {
     ElMessage.success(t('common.deleteSuccess'))

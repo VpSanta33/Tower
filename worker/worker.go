@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"net"
 	"os"
 	"path/filepath"
@@ -1032,9 +1033,15 @@ func (w *Worker) executeTask(task *scheduler.TaskInfo) {
 
 	// 获取资源槽位（优先使用自适应调度器）
 	if w.adaptiveScheduler != nil {
-		w.adaptiveScheduler.AcquireSlot()
+		if !w.adaptiveScheduler.AcquireSlot() {
+			w.taskLog(task.TaskId, LevelWarn, "Failed to acquire resource slot from adaptive scheduler, skipping task")
+			return
+		}
 	} else if w.resourceManager != nil {
-		w.resourceManager.AcquireSlot()
+		if !w.resourceManager.AcquireSlot() {
+			w.taskLog(task.TaskId, LevelWarn, "Failed to acquire resource slot from resource manager, skipping task")
+			return
+		}
 	}
 
 	w.mu.Lock()
@@ -1362,7 +1369,7 @@ func (w *Worker) executeTask(task *scheduler.TaskInfo) {
 			Recursive:          config.DomainScan.Recursive,
 			RemoveWildcard:     config.DomainScan.RemoveWildcard,
 			ResolveDNS:         config.DomainScan.ResolveDNS,
-			Concurrent:         w.config.Concurrency * 1, // DNS解析并发数为Worker并发数的10倍
+			Concurrent:         w.config.Concurrency * 10, // DNS解析并发数为Worker并发数的10倍
 			ProviderConfig:     providerConfig,
 		}
 
@@ -2335,6 +2342,7 @@ func (w *Worker) executeTask(task *scheduler.TaskInfo) {
 						}
 
 						pocCancel()
+						<-flushDone // Wait for background flush goroutine to exit before final Flush
 
 						// 扫描完成后，刷新剩余的漏洞
 						vulBuffer.Flush(ctx, func(vuls []*scanner.Vulnerability) {
@@ -2968,10 +2976,10 @@ func GetWorkerName() string {
 // randomSuffix 生成随机后缀
 func randomSuffix(length int) string {
 	const charset = "abcdefghijklmnopqrstuvwxyz0123456789"
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 	b := make([]byte, length)
 	for i := range b {
-		b[i] = charset[time.Now().UnixNano()%int64(len(charset))]
-		time.Sleep(time.Nanosecond)
+		b[i] = charset[rng.Intn(len(charset))]
 	}
 	return string(b)
 }

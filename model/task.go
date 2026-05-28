@@ -187,6 +187,12 @@ func (m *MainTaskModel) UpdateWithResult(ctx context.Context, id string, update 
 	return m.coll.UpdateOne(ctx, bson.M{"_id": oid}, bson.M{"$set": update})
 }
 
+// UpdateWithFilter 使用自定义过滤条件更新任务（用于乐观锁模式）
+func (m *MainTaskModel) UpdateWithFilter(ctx context.Context, filter bson.M, update bson.M) (*mongo.UpdateResult, error) {
+	update["update_time"] = time.Now()
+	return m.coll.UpdateOne(ctx, filter, bson.M{"$set": update})
+}
+
 func (m *MainTaskModel) Delete(ctx context.Context, id string) error {
 	oid, err := primitive.ObjectIDFromHex(id)
 	if err != nil {

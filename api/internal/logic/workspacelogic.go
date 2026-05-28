@@ -124,6 +124,24 @@ func (l *WorkspaceDeleteLogic) WorkspaceDelete(req *types.WorkspaceDeleteReq) (r
 		return &types.BaseResp{Code: 400, Msg: "系统默认工作空间不允许删除"}, nil
 	}
 
+	// 检查是否有正在运行/等待的任务
+	taskModel := l.svcCtx.GetMainTaskModel(req.Id)
+	activeFilter := bson.M{
+		"status": bson.M{"$in": []string{
+			model.TaskStatusCreated,
+			model.TaskStatusPending,
+			model.TaskStatusStarted,
+			model.TaskStatusPaused,
+		}},
+	}
+	activeCount, err := taskModel.Count(l.ctx, activeFilter)
+	if err != nil {
+		return &types.BaseResp{Code: 500, Msg: "检查活跃任务失败"}, nil
+	}
+	if activeCount > 0 {
+		return &types.BaseResp{Code: 400, Msg: "该工作空间下存在未完成的任务，请先停止所有任务后再删除"}, nil
+	}
+
 	if err = l.svcCtx.WorkspaceModel.Delete(l.ctx, req.Id); err != nil {
 		return &types.BaseResp{Code: 500, Msg: "删除失败"}, nil
 	}

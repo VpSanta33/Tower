@@ -8,7 +8,7 @@
       </div>
 
       <div class="menu-wrapper">
-        <el-menu :default-active="$route.path" :default-openeds="defaultOpeneds" :collapse="isCollapse" router
+        <el-menu :default-active="activeMenu" :default-openeds="defaultOpeneds" :collapse="isCollapse" router
           :unique-opened="false">
           <!-- 主控台分组 -->
           <el-menu-item index="/dashboard">
@@ -207,7 +207,7 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { useUserStore } from '@/stores/user'
@@ -219,12 +219,21 @@ import { resetUserPassword } from '@/api/auth'
 import { Setting, Monitor, List, Search, Aim, Odometer, Stamp, Connection, Fold, Expand, Key, Folder, OfficeBuilding, Bell, User, Document, CircleClose, Warning, Timer } from '@element-plus/icons-vue'
 
 const router = useRouter()
+const route = useRoute()
 const { t } = useI18n()
 const userStore = useUserStore()
 const themeStore = useThemeStore()
 const workspaceStore = useWorkspaceStore()
 const isCollapse = ref(false)
 const defaultOpeneds = ref(['scan-group', 'system-group'])
+
+const activeMenu = computed(() => {
+  const { path, fullPath } = route
+  if (path === '/settings' && route.query.tab) {
+    return fullPath
+  }
+  return path
+})
 
 // 修改密码
 const changePwdVisible = ref(false)

@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"github.com/robfig/cron/v3"
+	"github.com/zeromicro/go-zero/core/logx"
 )
 
 // 任务状态常量
@@ -234,7 +235,11 @@ func (s *Scheduler) PushTask(ctx context.Context, task *TaskInfo) error {
 		for _, workerName := range task.Workers {
 			taskCopy := *task
 			taskCopy.Workers = []string{workerName}
-			data, _ := json.Marshal(taskCopy)
+			data, err := json.Marshal(taskCopy)
+			if err != nil {
+				logx.Errorf("[Scheduler] Failed to marshal task for worker %s: %v, skipping", workerName, err)
+				continue
+			}
 			workerQueueKey := s.GetWorkerQueueKey(workerName)
 			pipe.ZAdd(ctx, workerQueueKey, redis.Z{
 				Score:  score,
@@ -280,8 +285,9 @@ func (s *Scheduler) PushTaskBatch(ctx context.Context, tasks []*TaskInfo) error 
 		task.CreateTime = baseTime.Local().Format("2006-01-02 15:04:05")
 
 		// 使用统一的优先级分数计算
-		// 同一批次的任务按顺序递增分数，保持顺序
-		score := s.calculatePriorityScore(task.Priority, baseTime) + float64(i)*0.001
+		// 同一批次的任务按顺序递增分数，保持顺序；步长足够小且总跨度不会跨越秒级（修复 #14）
+		// 用 i / (len(tasks)+1) 把整批压在 <1 秒区间内
+		score := s.calculatePriorityScore(task.Priority, baseTime) + float64(i)/float64(len(tasks)+1)
 
 		// 如果指定了 Workers，推送到每个 Worker 的专属队列
 		if len(task.Workers) > 0 {
@@ -321,14 +327,15 @@ func (s *Scheduler) PopTask(ctx context.Context) (*TaskInfo, error) {
 	}()
 
 	// Lua 脚本：原子化 ZPOPMIN + SADD，防止崩溃时任务丢失
+	// 使用 pcall 包裹 cjson.decode，避免畸形 JSON 让整个 Pop 失败（修复 #13）
 	script := redis.NewScript(`
 		local result = redis.call('ZPOPMIN', KEYS[1], 1)
 		if #result == 0 then
 			return nil
 		end
 		local member = result[1]
-		local data = cjson.decode(member)
-		if data and data.taskId then
+		local ok, data = pcall(cjson.decode, member)
+		if ok and data and data.taskId then
 			redis.call('SADD', KEYS[2], data.taskId)
 		end
 		return member
@@ -359,6 +366,7 @@ func (s *Scheduler) PopTaskForWorker(ctx context.Context, workerName string) (*T
 	}()
 
 	// Lua 脚本：原子化从专属队列或公共队列弹出 + 加入处理集合
+	// 用 pcall 兜底 cjson.decode（修复 #13）
 	script := redis.NewScript(`
 		local member = nil
 		local result = redis.call('ZPOPMIN', KEYS[1], 1)
@@ -373,8 +381,8 @@ func (s *Scheduler) PopTaskForWorker(ctx context.Context, workerName string) (*T
 		if member == nil then
 			return nil
 		end
-		local data = cjson.decode(member)
-		if data and data.taskId then
+		local ok, data = pcall(cjson.decode, member)
+		if ok and data and data.taskId then
 			redis.call('SADD', KEYS[3], data.taskId)
 		end
 		return member

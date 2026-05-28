@@ -164,12 +164,13 @@ func parseQuerySyntax(query string, filter bson.M) {
 
 	// 如果不包含 = 号，则视为普通文本模糊搜索
 	if !strings.Contains(query, "=") {
+		escapedQuery := regexp.QuoteMeta(query)
 		filter["$or"] = []bson.M{
-			{"host": bson.M{"$regex": query, "$options": "i"}},
-			{"authority": bson.M{"$regex": query, "$options": "i"}},
-			{"title": bson.M{"$regex": query, "$options": "i"}},
-			{"domain": bson.M{"$regex": query, "$options": "i"}},
-			{"service": bson.M{"$regex": query, "$options": "i"}},
+			{"host": bson.M{"$regex": escapedQuery, "$options": "i"}},
+			{"authority": bson.M{"$regex": escapedQuery, "$options": "i"}},
+			{"title": bson.M{"$regex": escapedQuery, "$options": "i"}},
+			{"domain": bson.M{"$regex": escapedQuery, "$options": "i"}},
+			{"service": bson.M{"$regex": escapedQuery, "$options": "i"}},
 		}
 		return
 	}
@@ -201,19 +202,19 @@ func parseQuerySyntax(query string, filter bson.M) {
 				filter["port"] = port
 			}
 		case "host", "ip":
-			filter["host"] = bson.M{"$regex": value, "$options": "i"}
+			filter["host"] = bson.M{"$regex": regexp.QuoteMeta(value), "$options": "i"}
 		case "service", "protocol":
-			filter["service"] = bson.M{"$regex": value, "$options": "i"}
+			filter["service"] = bson.M{"$regex": regexp.QuoteMeta(value), "$options": "i"}
 		case "title":
-			filter["title"] = bson.M{"$regex": value, "$options": "i"}
+			filter["title"] = bson.M{"$regex": regexp.QuoteMeta(value), "$options": "i"}
 		case "app", "finger", "fingerprint":
-			filter["app"] = bson.M{"$regex": cleanAppName(value), "$options": "i"}
+			filter["app"] = bson.M{"$regex": regexp.QuoteMeta(cleanAppName(value)), "$options": "i"}
 		case "status", "httpstatus":
 			filter["status"] = value
 		case "domain":
-			filter["domain"] = bson.M{"$regex": value, "$options": "i"}
+			filter["domain"] = bson.M{"$regex": regexp.QuoteMeta(value), "$options": "i"}
 		case "banner":
-			filter["banner"] = bson.M{"$regex": value, "$options": "i"}
+			filter["banner"] = bson.M{"$regex": regexp.QuoteMeta(value), "$options": "i"}
 		}
 	}
 }
@@ -247,7 +248,7 @@ func (l *AssetListLogic) AssetList(req *types.AssetListReq, workspaceId string) 
 	// 独立筛选条件：无论是否有 query 都生效，且不覆盖 parseQuerySyntax 已设置的字段
 	if req.Host != "" {
 		if _, exists := filter["host"]; !exists {
-			filter["host"] = bson.M{"$regex": req.Host, "$options": "i"}
+			filter["host"] = bson.M{"$regex": regexp.QuoteMeta(req.Host), "$options": "i"}
 		}
 	}
 	if req.Port > 0 {
@@ -262,18 +263,18 @@ func (l *AssetListLogic) AssetList(req *types.AssetListReq, workspaceId string) 
 	}
 	if req.Service != "" {
 		if _, exists := filter["service"]; !exists {
-			filter["service"] = bson.M{"$regex": req.Service, "$options": "i"}
+			filter["service"] = bson.M{"$regex": regexp.QuoteMeta(req.Service), "$options": "i"}
 		}
 	}
 	if req.Title != "" {
 		if _, exists := filter["title"]; !exists {
-			filter["title"] = bson.M{"$regex": req.Title, "$options": "i"}
+			filter["title"] = bson.M{"$regex": regexp.QuoteMeta(req.Title), "$options": "i"}
 		}
 	}
 	if req.App != "" {
 		if _, exists := filter["app"]; !exists {
 			cleanedApp := cleanAppName(req.App)
-			filter["app"] = bson.M{"$regex": cleanedApp, "$options": "i"}
+			filter["app"] = bson.M{"$regex": regexp.QuoteMeta(cleanedApp), "$options": "i"}
 		}
 	}
 	if req.HttpStatus != "" {

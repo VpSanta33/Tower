@@ -119,7 +119,7 @@ func RegisterHandlers(server *rest.Server, svcCtx *svc.ServiceContext) {
 	server.AddRoutes(workerRoutes)
 
 	// 需要认证的路由
-	authMiddleware := middleware.NewAuthMiddleware(svcCtx.Config.Auth.AccessSecret)
+	authMiddleware := middleware.NewAuthMiddleware(svcCtx.Config.Auth.AccessSecret, svcCtx.UserModel)
 	authRoutes := []rest.Route{
 		// 用户管理（查看权限）
 		{Method: http.MethodPost, Path: "/api/v1/user/list", Handler: user.UserListHandler(svcCtx)},
@@ -167,12 +167,14 @@ func RegisterHandlers(server *rest.Server, svcCtx *svc.ServiceContext) {
 		// 应用管理
 		{Method: http.MethodPost, Path: "/api/v1/asset/app/list", Handler: asset.AppListHandler(svcCtx)},
 		{Method: http.MethodPost, Path: "/api/v1/asset/app/stat", Handler: asset.AppStatHandler(svcCtx)},
+		{Method: http.MethodPost, Path: "/api/v1/asset/app/delete", Handler: asset.AppDeleteHandler(svcCtx)},
 		{Method: http.MethodPost, Path: "/api/v1/asset/app/batchDelete", Handler: asset.AppBatchDeleteHandler(svcCtx)},
 		{Method: http.MethodPost, Path: "/api/v1/asset/app/clear", Handler: asset.AppClearHandler(svcCtx)},
 
 		// Icon管理
 		{Method: http.MethodPost, Path: "/api/v1/asset/icon/list", Handler: asset.IconListHandler(svcCtx)},
 		{Method: http.MethodPost, Path: "/api/v1/asset/icon/stat", Handler: asset.IconStatHandler(svcCtx)},
+		{Method: http.MethodPost, Path: "/api/v1/asset/icon/delete", Handler: asset.IconDeleteHandler(svcCtx)},
 		{Method: http.MethodPost, Path: "/api/v1/asset/icon/batchDelete", Handler: asset.IconBatchDeleteHandler(svcCtx)},
 		{Method: http.MethodPost, Path: "/api/v1/asset/icon/clear", Handler: asset.IconClearHandler(svcCtx)},
 
@@ -203,6 +205,7 @@ func RegisterHandlers(server *rest.Server, svcCtx *svc.ServiceContext) {
 
 		// 任务管理
 		{Method: http.MethodPost, Path: "/api/v1/task/list", Handler: task.MainTaskListHandler(svcCtx)},
+		{Method: http.MethodPost, Path: "/api/v1/task/detail", Handler: task.MainTaskDetailHandler(svcCtx)},
 		{Method: http.MethodPost, Path: "/api/v1/task/create", Handler: task.MainTaskCreateHandler(svcCtx)},
 		{Method: http.MethodPost, Path: "/api/v1/task/update", Handler: task.MainTaskUpdateHandler(svcCtx)},
 		{Method: http.MethodPost, Path: "/api/v1/task/delete", Handler: task.MainTaskDeleteHandler(svcCtx)},

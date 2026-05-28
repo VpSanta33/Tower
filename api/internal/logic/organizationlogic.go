@@ -3,6 +3,7 @@ package logic
 import (
 	"context"
 
+	"tower/api/internal/logic/common"
 	"tower/api/internal/svc"
 	"tower/api/internal/types"
 	"tower/model"
@@ -124,6 +125,16 @@ func (l *OrganizationDeleteLogic) OrganizationDelete(req *types.OrganizationDele
 
 	if err = l.svcCtx.OrganizationModel.Delete(l.ctx, req.Id); err != nil {
 		return &types.BaseResp{Code: 500, Msg: "删除失败"}, nil
+	}
+
+	// 清理所有工作空间中引用该组织的资产
+	wsIds := common.GetWorkspaceIds(l.ctx, l.svcCtx, "all")
+	for _, wsId := range wsIds {
+		assetModel := l.svcCtx.GetAssetModel(wsId)
+		_, err := assetModel.UpdateMany(l.ctx, bson.M{"org_id": req.Id}, bson.M{"org_id": ""})
+		if err != nil {
+			logx.Errorf("清理工作空间 %s 中的组织引用失败: %v", wsId, err)
+		}
 	}
 
 	return &types.BaseResp{Code: 0, Msg: "删除成功"}, nil

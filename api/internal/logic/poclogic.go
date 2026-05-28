@@ -1517,6 +1517,13 @@ func (l *NucleiTemplateDownloadLogic) downloadTemplatesWithProgress(taskId strin
 	if downloadErr != nil {
 		logx.Errorf("[Nuclei Templates] All download methods failed: %v", downloadErr)
 		updateDownloadStatus(taskId, "failed", 0, 0, "下载失败，请使用上传ZIP包方式导入模板")
+		// 5分钟后清理失败的任务状态，防止map无限增长
+		go func() {
+			time.Sleep(5 * time.Minute)
+			downloadTasksMu.Lock()
+			delete(downloadTasks, taskId)
+			downloadTasksMu.Unlock()
+		}()
 		return
 	}
 
@@ -1526,6 +1533,13 @@ func (l *NucleiTemplateDownloadLogic) downloadTemplatesWithProgress(taskId strin
 
 	if templateCount == 0 {
 		updateDownloadStatus(taskId, "failed", 0, 0, "下载完成但未找到模板文件")
+		// 5分钟后清理失败的任务状态，防止map无限增长
+		go func() {
+			time.Sleep(5 * time.Minute)
+			downloadTasksMu.Lock()
+			delete(downloadTasks, taskId)
+			downloadTasksMu.Unlock()
+		}()
 		return
 	}
 

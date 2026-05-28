@@ -48,6 +48,8 @@ func (l *ValidatePocLogic) ValidatePoc(in *pb.ValidatePocReq) (*pb.ValidatePocRe
 			hasActiveWorker = true
 			break
 		}
+		// 修复 K1：心跳已过期的 worker 顺手从集合移除，防止 tower:workers 单调膨胀
+		l.svcCtx.RedisClient.SRem(l.ctx, "tower:workers", worker)
 	}
 
 	if !hasActiveWorker {

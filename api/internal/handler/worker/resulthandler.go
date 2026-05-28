@@ -3,6 +3,7 @@ package worker
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"time"
 
 	"tower/api/internal/svc"
@@ -383,7 +384,7 @@ func WorkerDirScanResultHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 
 		for _, result := range req.Results {
 			// Create a unique key for this target
-			key := result.Authority + ":" + result.Host + ":" + string(rune(result.Port))
+			key := result.Authority + ":" + result.Host + ":" + strconv.Itoa(result.Port)
 			if _, exists := targetKeys[key]; !exists {
 				targetKeys[key] = struct {
 					Authority string

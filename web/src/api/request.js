@@ -18,8 +18,9 @@ request.interceptors.request.use(
       config.headers['Authorization'] = `Bearer ${userStore.token}`
     }
     
-    // 设置工作空间ID header
-    // 确保工作空间ID的正确处理
+    // 设置工作空间ID header：
+    // - 'all' 或空：发送 'all'（后端按角色判定，仅管理员可跨工作空间）
+    // - 其他值：直接下发
     const currentWsId = workspaceStore.currentWorkspaceId
     if (!currentWsId || currentWsId === 'undefined' || currentWsId === 'null' || currentWsId === 'all') {
       config.headers['X-Workspace-Id'] = 'all'

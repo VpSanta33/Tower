@@ -3,6 +3,8 @@ package cache
 import (
 	"sync"
 	"time"
+
+	"golang.org/x/sync/singleflight"
 )
 
 // LocalCache 本地内存缓存
@@ -11,6 +13,7 @@ type LocalCache struct {
 	ttl     time.Duration
 	cleaner *time.Ticker
 	stopCh  chan struct{}
+	sf      singleflight.Group
 }
 
 type cacheItem struct {
@@ -86,19 +89,25 @@ func (c *LocalCache) Exists(key string) bool {
 	return ok
 }
 
-// GetOrSet 获取或设置缓存
+// GetOrSet 获取或设置缓存（使用 singleflight 抗 thundering herd）
 func (c *LocalCache) GetOrSet(key string, setter func() (interface{}, error)) (interface{}, error) {
 	if v, ok := c.Get(key); ok {
 		return v, nil
 	}
 
-	value, err := setter()
-	if err != nil {
-		return nil, err
-	}
-
-	c.Set(key, value)
-	return value, nil
+	value, err, _ := c.sf.Do(key, func() (interface{}, error) {
+		// double-check：可能在等待锁时已被其他 goroutine 写入
+		if v, ok := c.Get(key); ok {
+			return v, nil
+		}
+		v, err := setter()
+		if err != nil {
+			return nil, err
+		}
+		c.Set(key, v)
+		return v, nil
+	})
+	return value, err
 }
 
 // GetOrSetWithTTL 获取或设置缓存（自定义TTL）

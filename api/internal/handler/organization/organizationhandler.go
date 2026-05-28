@@ -6,6 +6,7 @@ import (
 	"tower/api/internal/logic"
 	"tower/api/internal/svc"
 	"tower/api/internal/types"
+	"tower/pkg/response"
 
 	"github.com/zeromicro/go-zero/rest/httpx"
 )
@@ -20,7 +21,11 @@ func OrganizationListHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 		}
 
 		l := logic.NewOrganizationListLogic(r.Context(), svcCtx)
-		resp, _ := l.OrganizationList(&req)
+		resp, err := l.OrganizationList(&req)
+		if err != nil {
+			response.Error(w, err)
+			return
+		}
 		httpx.OkJson(w, resp)
 	}
 }
@@ -35,7 +40,11 @@ func OrganizationSaveHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 		}
 
 		l := logic.NewOrganizationSaveLogic(r.Context(), svcCtx)
-		resp, _ := l.OrganizationSave(&req)
+		resp, err := l.OrganizationSave(&req)
+		if err != nil {
+			response.Error(w, err)
+			return
+		}
 		httpx.OkJson(w, resp)
 	}
 }
@@ -50,7 +59,11 @@ func OrganizationDeleteHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 		}
 
 		l := logic.NewOrganizationDeleteLogic(r.Context(), svcCtx)
-		resp, _ := l.OrganizationDelete(&req)
+		resp, err := l.OrganizationDelete(&req)
+		if err != nil {
+			response.Error(w, err)
+			return
+		}
 		httpx.OkJson(w, resp)
 	}
 }
@@ -65,7 +78,11 @@ func OrganizationUpdateStatusHandler(svcCtx *svc.ServiceContext) http.HandlerFun
 		}
 
 		l := logic.NewOrganizationUpdateStatusLogic(r.Context(), svcCtx)
-		resp, _ := l.OrganizationUpdateStatus(&req)
+		resp, err := l.OrganizationUpdateStatus(&req)
+		if err != nil {
+			response.Error(w, err)
+			return
+		}
 		httpx.OkJson(w, resp)
 	}
 }

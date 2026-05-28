@@ -57,9 +57,9 @@ func (l *NewTaskLogic) NewTask(in *pb.NewTaskReq) (*pb.NewTaskResp, error) {
 		}, nil
 	}
 
-	// 添加到任务队列（使用时间戳作为分数，实现FIFO）
+	// 添加到任务队列（使用秒级时间戳作为分数，避免 UnixNano cast 到 float64 损失精度）
 	queueKey := "tower:task:queue"
-	score := float64(time.Now().UnixNano())
+	score := float64(time.Now().Unix())
 	err = l.svcCtx.RedisClient.ZAdd(l.ctx, queueKey, redis.Z{
 		Score:  score,
 		Member: string(taskJson),

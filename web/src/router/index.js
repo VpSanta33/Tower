@@ -209,17 +209,39 @@ const router = createRouter({
   routes
 })
 
+// 解析 JWT exp 字段（不校验签名，仅做本地过期判断）
+function isTokenExpired(token) {
+  if (!token) return true
+  try {
+    const parts = token.split('.')
+    if (parts.length !== 3) return true
+    const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')))
+    if (!payload.exp) return false
+    return Date.now() >= payload.exp * 1000
+  } catch {
+    return true
+  }
+}
+
 // 路由守卫
 router.beforeEach((to, from, next) => {
   const userStore = useUserStore()
-  
-  if (to.meta.requiresAuth !== false && !userStore.token) {
-    next('/login')
-  } else if (to.path === '/login' && userStore.token) {
-    next('/dashboard')
-  } else {
-    next()
+  const requiresAuth = to.meta.requiresAuth !== false
+  const tokenInvalid = !userStore.token || isTokenExpired(userStore.token)
+
+  if (requiresAuth && tokenInvalid) {
+    if (userStore.token) userStore.logout()
+    return next('/login')
   }
+  if (to.path === '/login' && !tokenInvalid) {
+    return next('/dashboard')
+  }
+  // 角色校验：meta.roles 指定时必须命中
+  const allowedRoles = to.meta?.roles
+  if (Array.isArray(allowedRoles) && allowedRoles.length > 0 && !allowedRoles.includes(userStore.role)) {
+    return next('/dashboard')
+  }
+  next()
 })
 
 export default router

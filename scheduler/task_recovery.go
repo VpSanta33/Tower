@@ -80,6 +80,10 @@ func (m *TaskRecoveryManager) monitorLoop() {
 	ticker := time.NewTicker(m.checkInterval)
 	defer ticker.Stop()
 
+	// Worker 集合清理周期：每 5 分钟一次（修复 K1）
+	workersCleanTicker := time.NewTicker(5 * time.Minute)
+	defer workersCleanTicker.Stop()
+
 	for {
 		select {
 		case <-m.ctx.Done():
@@ -87,7 +91,46 @@ func (m *TaskRecoveryManager) monitorLoop() {
 			return
 		case <-ticker.C:
 			m.checkAndRecoverTasks()
+		case <-workersCleanTicker.C:
+			m.cleanStaleWorkerSet()
 		}
+	}
+}
+
+// cleanStaleWorkerSet 清理 tower:workers 集合中已无心跳的成员（修复 K1）
+// Worker 心跳 key 60s TTL，集合本身无过期机制，此处定期扫描修剪
+func (m *TaskRecoveryManager) cleanStaleWorkerSet() {
+	const workersKey = "tower:workers"
+	names, err := m.rdb.SMembers(m.ctx, workersKey).Result()
+	if err != nil {
+		m.logger.Errorf("[WorkerSetClean] SMembers failed: %v", err)
+		return
+	}
+	if len(names) == 0 {
+		return
+	}
+	// 用 pipeline 批量 EXISTS，避免 N 次 round-trip
+	pipe := m.rdb.Pipeline()
+	cmds := make([]*redis.IntCmd, len(names))
+	for i, n := range names {
+		cmds[i] = pipe.Exists(m.ctx, "tower:worker:"+n)
+	}
+	if _, err := pipe.Exec(m.ctx); err != nil {
+		m.logger.Errorf("[WorkerSetClean] pipeline exec failed: %v", err)
+		return
+	}
+	var stale []interface{}
+	for i, c := range cmds {
+		if c.Val() == 0 {
+			stale = append(stale, names[i])
+		}
+	}
+	if len(stale) > 0 {
+		if err := m.rdb.SRem(m.ctx, workersKey, stale...).Err(); err != nil {
+			m.logger.Errorf("[WorkerSetClean] SRem %d stale workers failed: %v", len(stale), err)
+			return
+		}
+		m.logger.Infof("[WorkerSetClean] removed %d stale workers from set", len(stale))
 	}
 }
 
@@ -177,31 +220,44 @@ func (m *TaskRecoveryManager) recoverTask(taskId string, execInfo *TaskExecution
 		return
 	}
 
-	// 根据任务类型选择队列
-	var queueKey string
-	if len(taskInfo.Workers) > 0 {
-		queueKey = fmt.Sprintf("tower:task:queue:worker:%s", taskInfo.Workers[0])
-	} else {
-		queueKey = m.queueKey
+	// 根据任务类型选择队列：先把所有目标队列 ZADD 完，再 SREM，避免中途失败造成 SREM 已发生而后续队列未入队
+	// 同时把 RetryCount 持久化前置到入队前（修复 #7）
+	if err := m.saveTaskExecutionInfo(taskId, execInfo); err != nil {
+		m.logger.Errorf("Persist retry count failed for %s: %v", taskId, err)
 	}
 
 	score := float64(time.Now().Unix())
-
-	// Lua 脚本：原子化 SREM + ZADD，防止崩溃时任务丢失或重复
-	script := redis.NewScript(`
-		redis.call('SREM', KEYS[1], ARGV[1])
-		redis.call('ZADD', KEYS[2], ARGV[2], ARGV[3])
-		return 1
-	`)
-	err = script.Run(m.ctx, m.rdb, []string{m.processingKey, queueKey},
-		taskId, score, string(taskData)).Err()
-
-	if err != nil {
-		m.logger.Errorf("Failed to atomically requeue task %s: %v", taskId, err)
-		return
+	if len(taskInfo.Workers) > 0 {
+		// 先批量 ZADD 到每个 worker 队列
+		pipe := m.rdb.Pipeline()
+		for _, workerName := range taskInfo.Workers {
+			queueKey := fmt.Sprintf("tower:task:queue:worker:%s", workerName)
+			pipe.ZAdd(m.ctx, queueKey, redis.Z{Score: score, Member: string(taskData)})
+		}
+		if _, err := pipe.Exec(m.ctx); err != nil {
+			m.logger.Errorf("Failed to enqueue task %s to worker queues: %v", taskId, err)
+			return
+		}
+		// 全部入队成功后再从 processing 集合移除
+		if err := m.rdb.SRem(m.ctx, m.processingKey, taskId).Err(); err != nil {
+			m.logger.Errorf("Failed to remove task %s from processing set: %v", taskId, err)
+			return
+		}
+	} else {
+		// 公共队列：单条 ZADD + SREM 仍然用 Lua 保证原子性
+		script := redis.NewScript(`
+			redis.call('ZADD', KEYS[2], ARGV[2], ARGV[3])
+			redis.call('SREM', KEYS[1], ARGV[1])
+			return 1
+		`)
+		if err := script.Run(m.ctx, m.rdb, []string{m.processingKey, m.queueKey},
+			taskId, score, string(taskData)).Err(); err != nil {
+			m.logger.Errorf("Failed to atomically requeue task %s: %v", taskId, err)
+			return
+		}
 	}
 
-	// 更新执行信息
+	// 更新执行信息（lastUpdate）
 	execInfo.LastUpdate = time.Now()
 	m.saveTaskExecutionInfo(taskId, execInfo)
 
