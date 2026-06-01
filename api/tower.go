@@ -13,6 +13,7 @@ import (
 	"tower/api/internal/handler"
 	"tower/api/internal/logic"
 	"tower/api/internal/svc"
+	webassets "tower/api/internal/web"
 	"tower/model"
 	"tower/scheduler"
 
@@ -63,7 +64,7 @@ func main() {
 	}
 
 	// 创建HTTP服务器
-	server := rest.MustNewServer(c.RestConf)
+	server := rest.MustNewServer(c.RestConf, rest.WithNotFoundHandler(webassets.Handler()))
 	defer server.Stop()
 
 	handler.RegisterHandlers(server, svcCtx)

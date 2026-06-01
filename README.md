@@ -121,6 +121,15 @@ admin / 123456
 
 首次登录后请修改默认密码。
 
+## 单二进制构建
+
+API 支持把前端构建产物嵌入到二进制中，构建后访问 `http://<server-ip>:8888` 即可打开控制台。
+
+```bash
+scripts/build-single.sh
+./bin/tower -f api/etc/tower.yaml
+```
+
 ## 开发模式启动
 
 ### 1. 启动 MongoDB 和 Redis
